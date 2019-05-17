@@ -1,0 +1,9 @@
+altgraph==0.16.1
+docopt==0.6.2
+future==0.17.1
+macholib==1.11
+pefile==2019.4.18
+pkg-resources==0.0.0
+PyInstaller==3.4
+PyYAML==5.1
+urllib3==1.24.2; python_version == '3.3'

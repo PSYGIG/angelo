@@ -14,13 +14,33 @@
 #  * limitations under the License.
 #  */
 
-from __future__ import absolute_import
-from __future__ import unicode_literals
+class Process(object):
+    def __init__(
+        self,
+        name,
+        system='default',
+        pid_mode=None,
+        default_platform=None,
+        **options
+    ):
+        self.name = name
+        self.system = system
+        self.pid_mode = pid_mode or PidMode(None)
+        self.default_platform = default_platform
+        self.options = options
 
-from distutils.version import LooseVersion
+    def __repr__(self):
+        return '<Service: {}>'.format(self.name)
 
 
-class AngeloVersion(LooseVersion):
-    """ A hashable version object """
-    def __hash__(self):
-        return hash(self.vstring)
+class PidMode(object):
+    def __init__(self, mode):
+        self._mode = mode
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @property
+    def service_name(self):
+        return None

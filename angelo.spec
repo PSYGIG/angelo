@@ -4,7 +4,7 @@ block_cipher = None
 
 
 a = Analysis(['bin/angelo'],
-             pathex=['/home/gkmlo/Work/psygig/incubator/angelo'],
+             pathex=['.'],
              binaries=[],
              datas=[],
              hiddenimports=[],
@@ -22,7 +22,13 @@ exe = EXE(pyz,
           a.binaries,
           a.zipfiles,
           a.datas,
-          [],
+          [
+            (
+                'angelo/config/config_schema_v1.0.json',
+                'angelo/config/config_schema_v1.0.json',
+                'DATA'
+            ),
+          ],
           name='angelo',
           debug=False,
           bootloader_ignore_signals=False,

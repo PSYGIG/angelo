@@ -1,3 +1,20 @@
+# /*
+#  * Copyright (C) 2019 PSYGIG株式会社
+#  * Copyright (C) 2019 Docker Inc.
+#  *
+#  * Licensed under the Apache License, Version 2.0 (the "License");
+#  * you may not use this file except in compliance with the License.
+#  * You may obtain a copy of the License at
+#  *
+#  * http://www.apache.org/licenses/LICENSE-2.0
+#  *
+#  * Unless required by applicable law or agreed to in writing, software
+#  * distributed under the License is distributed on an "AS IS" BASIS,
+#  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  * See the License for the specific language governing permissions and
+#  * limitations under the License.
+#  */
+
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
@@ -147,11 +164,11 @@ DOCKER_VALID_URL_PREFIXES = (
 )
 
 SUPPORTED_FILENAMES = [
-    'docker-compose.yml',
-    'docker-compose.yaml',
+    'angelo.yml',
+    'angelo.yaml',
 ]
 
-DEFAULT_OVERRIDE_FILENAMES = ('docker-compose.override.yml', 'docker-compose.override.yaml')
+DEFAULT_OVERRIDE_FILENAMES = ('angelo.override.yml', 'angelo.override.yaml')
 
 
 log = logging.getLogger(__name__)
@@ -196,7 +213,7 @@ class ConfigFile(namedtuple('_ConfigFile', 'filename config')):
         if isinstance(version, dict):
             log.warn('Unexpected type for "version" key in "{}". Assuming '
                      '"version" is the name of a service, and defaulting to '
-                     'Compose file version 1.'.format(self.filename))
+                     'Angelo file version 1.'.format(self.filename))
             return V1
 
         if not isinstance(version, six.string_types):
@@ -205,18 +222,9 @@ class ConfigFile(namedtuple('_ConfigFile', 'filename config')):
                 .format(self.filename))
 
         if version == '1':
-            raise ConfigurationError(
-                'Version in "{}" is invalid. {}'
-                .format(self.filename, VERSION_EXPLANATION)
-            )
+            return const.ANGELOFILE_V1_0
 
-        if version == '2':
-            return const.COMPOSEFILE_V2_0
-
-        if version == '3':
-            return const.COMPOSEFILE_V3_0
-
-        return ComposeVersion(version)
+        return AngeloVersion(version)
 
     def get_service(self, name):
         return self.get_service_dicts()[name]
@@ -231,13 +239,13 @@ class ConfigFile(namedtuple('_ConfigFile', 'filename config')):
         return {} if self.version == V1 else self.config.get('networks', {})
 
     def get_secrets(self):
-        return {} if self.version < const.COMPOSEFILE_V3_1 else self.config.get('secrets', {})
+        return self.config.get('secrets', {})
 
     def get_configs(self):
-        return {} if self.version < const.COMPOSEFILE_V3_3 else self.config.get('configs', {})
+        return self.config.get('configs', {})
 
 
-class Config(namedtuple('_Config', 'version services volumes networks secrets configs')):
+class Config(namedtuple('_Config', 'version services secrets configs')):
     """
     :param version: configuration version
     :type  version: int
@@ -309,7 +317,7 @@ def get_default_config_files(base_dir):
     (candidates, path) = find_candidates_in_parent_dirs(SUPPORTED_FILENAMES, base_dir)
 
     if not candidates:
-        raise ComposeFileNotFound(SUPPORTED_FILENAMES)
+        raise AngeloFileNotFound(SUPPORTED_FILENAMES)
 
     winner = candidates[0]
 
@@ -351,7 +359,7 @@ def find_candidates_in_parent_dirs(filenames, path):
 def check_swarm_only_config(service_dicts, compatibility=False):
     warning_template = (
         "Some services ({services}) use the '{key}' key, which will be ignored. "
-        "Compose does not support '{key}' configuration - use "
+        "Angelo does not support '{key}' configuration - use "
         "`docker stack deploy` to deploy to a swarm."
     )
 
@@ -407,7 +415,7 @@ def load(config_details, compatibility=False, interpolate=True):
 
     version = V1
 
-    return Config(version, service_dicts, volumes, networks, secrets, configs)
+    return Config(version, service_dicts, secrets, configs)
 
 
 def load_mapping(config_files, get_func, entity_type, working_dir=None):
@@ -527,41 +535,8 @@ def process_config_file(config_file, environment, service_name=None, interpolate
         interpolate,
     )
 
-    if config_file.version > V1:
-        processed_config = dict(config_file.config)
-        processed_config['services'] = services
-        processed_config['volumes'] = process_config_section(
-            config_file,
-            config_file.get_volumes(),
-            'volume',
-            environment,
-            interpolate,
-        )
-        processed_config['networks'] = process_config_section(
-            config_file,
-            config_file.get_networks(),
-            'network',
-            environment,
-            interpolate,
-        )
-        if config_file.version >= const.COMPOSEFILE_V3_1:
-            processed_config['secrets'] = process_config_section(
-                config_file,
-                config_file.get_secrets(),
-                'secret',
-                environment,
-                interpolate,
-            )
-        if config_file.version >= const.COMPOSEFILE_V3_3:
-            processed_config['configs'] = process_config_section(
-                config_file,
-                config_file.get_configs(),
-                'config',
-                environment,
-                interpolate,
-            )
-    else:
-        processed_config = services
+    processed_config = dict(config_file.config)
+    processed_config['services'] = services
 
     config_file = config_file._replace(config=processed_config)
     validate_against_config_schema(config_file)
@@ -688,20 +663,6 @@ def validate_extended_service_dict(service_dict, filename, service):
         raise ConfigurationError(
             "%s services with 'links' cannot be extended" % error_prefix)
 
-    if 'volumes_from' in service_dict:
-        raise ConfigurationError(
-            "%s services with 'volumes_from' cannot be extended" % error_prefix)
-
-    if 'net' in service_dict:
-        if get_container_name_from_network_mode(service_dict['net']):
-            raise ConfigurationError(
-                "%s services with 'net: container' cannot be extended" % error_prefix)
-
-    if 'network_mode' in service_dict:
-        if get_service_name_from_network_mode(service_dict['network_mode']):
-            raise ConfigurationError(
-                "%s services with 'network_mode: service' cannot be extended" % error_prefix)
-
     if 'depends_on' in service_dict:
         raise ConfigurationError(
             "%s services with 'depends_on' cannot be extended" % error_prefix)
@@ -711,22 +672,6 @@ def validate_service(service_config, service_names, config_file):
     service_dict, service_name = service_config.config, service_config.name
     validate_service_constraints(service_dict, service_name, config_file)
     validate_paths(service_dict)
-
-    validate_cpu(service_config)
-    validate_ulimits(service_config)
-    validate_network_mode(service_config, service_names)
-    validate_pid_mode(service_config, service_names)
-    validate_depends_on(service_config, service_names)
-    validate_links(service_config, service_names)
-    validate_healthcheck(service_config)
-    validate_credential_spec(service_config)
-
-    if not service_dict.get('image') and has_uppercase(service_name):
-        raise ConfigurationError(
-            "Service '{name}' contains uppercase characters which are not valid "
-            "as part of an image name. Either use a lowercase service name or "
-            "use the `image` field to set a custom name for the service image."
-            .format(name=service_name))
 
 
 def process_service(service_config):
@@ -738,12 +683,6 @@ def process_service(service_config):
             expand_path(working_dir, path)
             for path in to_list(service_dict['env_file'])
         ]
-
-    if 'build' in service_dict:
-        process_build_section(service_dict, working_dir)
-
-    if 'volumes' in service_dict and service_dict.get('volume_driver') is None:
-        service_dict['volumes'] = resolve_volume_paths(working_dir, service_dict)
 
     if 'sysctls' in service_dict:
         service_dict['sysctls'] = build_string_dict(parse_sysctls(service_dict['sysctls']))
@@ -843,8 +782,8 @@ def process_healthcheck(service_dict):
 def finalize_service_volumes(service_dict, environment):
     if 'volumes' in service_dict:
         finalized_volumes = []
-        normalize = environment.get_boolean('COMPOSE_CONVERT_WINDOWS_PATHS')
-        win_host = environment.get_boolean('COMPOSE_FORCE_WINDOWS_HOST')
+        normalize = environment.get_boolean('ANGELO_CONVERT_WINDOWS_PATHS')
+        win_host = environment.get_boolean('ANGELO_FORCE_WINDOWS_HOST')
         for v in service_dict['volumes']:
             if isinstance(v, dict):
                 finalized_volumes.append(MountSpec.parse(v, normalize, win_host))

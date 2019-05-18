@@ -1,0 +1,15 @@
+image: "python:3.6"
+
+variables:
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/medium_py_test
+
+before_script:
+  - pip install -r requirements.txt
+  - pip install -r requirements-build.txt
+
+build:
+  script:
+    - pyinstaller --onefile --exclude-module PyInstaller angelo.spec
+test:
+  script:
+    - pytest

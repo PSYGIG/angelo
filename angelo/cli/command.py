@@ -1,3 +1,20 @@
+# /*
+#  * Copyright (C) 2019 PSYGIG株式会社
+#  * Copyright (C) 2019 Docker Inc.
+#  *
+#  * Licensed under the Apache License, Version 2.0 (the "License");
+#  * you may not use this file except in compliance with the License.
+#  * You may obtain a copy of the License at
+#  *
+#  * http://www.apache.org/licenses/LICENSE-2.0
+#  *
+#  * Unless required by applicable law or agreed to in writing, software
+#  * distributed under the License is distributed on an "AS IS" BASIS,
+#  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  * See the License for the specific language governing permissions and
+#  * limitations under the License.
+#  */
+
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
@@ -11,6 +28,7 @@ from . import errors
 from . import verbose_proxy
 from .. import config
 from .. import parallel
+from ..system import System
 from ..config.environment import Environment
 from ..const import API_VERSIONS
 from .utils import get_version_info
@@ -33,7 +51,7 @@ SILENT_COMMANDS = set((
 ))
 
 
-def project_from_options(project_dir, options, additional_options={}):
+def system_from_options(project_dir, options, additional_options={}):
     override_dir = options.get('--project-directory')
     environment_file = options.get('--env-file')
     environment = Environment.from_env_file(override_dir or project_dir, environment_file)
@@ -49,7 +67,6 @@ def project_from_options(project_dir, options, additional_options={}):
         project_name=options.get('--project-name'),
         verbose=options.get('--verbose'),
         host=host,
-        tls_config=tls_config_from_options(options, environment),
         environment=environment,
         override_dir=override_dir,
         compatibility=options.get('--compatibility'),
@@ -102,23 +119,6 @@ def get_config_path_from_options(base_dir, options, environment):
     return None
 
 
-def get_client(environment, verbose=False, version=None, tls_config=None, host=None,
-               tls_version=None):
-
-    client = docker_client(
-        version=version, tls_config=tls_config, host=host,
-        environment=environment, tls_version=get_tls_version(environment)
-    )
-    if verbose:
-        version_info = six.iteritems(client.version())
-        log.info(get_version_info('full'))
-        log.info("Docker base_url: %s", client.base_url)
-        log.info("Docker version: %s",
-                 ", ".join("%s=%s" % item for item in version_info))
-        return verbose_proxy.VerboseProxy('docker', client)
-    return client
-
-
 def get_project(project_dir, config_path=None, project_name=None, verbose=False,
                 host=None, tls_config=None, environment=None, override_dir=None,
                 compatibility=False, interpolate=True):
@@ -134,15 +134,11 @@ def get_project(project_dir, config_path=None, project_name=None, verbose=False,
         'COMPOSE_API_VERSION',
         API_VERSIONS[config_data.version])
 
-    client = get_client(
-        verbose=verbose, version=api_version, tls_config=tls_config,
-        host=host, environment=environment
-    )
 
-    with errors.handle_connection_errors(client):
-        return Project.from_config(
-            project_name, config_data, client, environment.get('DOCKER_DEFAULT_PLATFORM')
-        )
+
+    return System.from_config(
+        project_name, config_data, environment.get('DOCKER_DEFAULT_PLATFORM')
+    )
 
 
 def get_project_name(working_dir, project_name=None, environment=None):

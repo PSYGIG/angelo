@@ -1,6 +1,6 @@
 # /*
+#  * Copyright (C) 2019 PSYGIG株式会社
 #  * Copyright (C) 2019 Docker Inc.
-#  * Modifications Copyright (C) 2019 PSYGIG株式会社
 #  *
 #  * Licensed under the Apache License, Version 2.0 (the "License");
 #  * you may not use this file except in compliance with the License.
@@ -101,7 +101,7 @@ def get_version_info(scope):
         angelo.__version__,
         get_build_version())
 
-    if scope == 'compose':
+    if scope == 'angelo':
         return versioninfo
     if scope == 'full':
         return (

@@ -1,3 +1,20 @@
+# /*
+#  * Copyright (C) 2019 PSYGIG株式会社
+#  * Copyright (C) 2019 Docker Inc.
+#  *
+#  * Licensed under the Apache License, Version 2.0 (the "License");
+#  * you may not use this file except in compliance with the License.
+#  * You may obtain a copy of the License at
+#  *
+#  * http://www.apache.org/licenses/LICENSE-2.0
+#  *
+#  * Unless required by applicable law or agreed to in writing, software
+#  * distributed under the License is distributed on an "AS IS" BASIS,
+#  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  * See the License for the specific language governing permissions and
+#  * limitations under the License.
+#  */
+
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
@@ -409,22 +426,9 @@ def _parse_oneof_validator(error):
 
 
 def process_service_constraint_errors(error, service_name, version):
-    if version == V1:
-        if 'image' in error.instance and 'build' in error.instance:
-            return (
-                "Service {} has both an image and build path specified. "
-                "A service can either be built to image or use an existing "
-                "image, not both.".format(service_name))
-
-        if 'image' in error.instance and 'dockerfile' in error.instance:
-            return (
-                "Service {} has both an image and alternate Dockerfile. "
-                "A service can either be built to image or use an existing "
-                "image, not both.".format(service_name))
-
-    if 'image' not in error.instance and 'build' not in error.instance:
+    if 'command' in error.instance:
         return (
-            "Service {} has neither an image nor a build context specified. "
+            "Service {} need a command specified. "
             "At least one must be provided.".format(service_name))
 
 

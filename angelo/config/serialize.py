@@ -1,3 +1,20 @@
+# /*
+#  * Copyright (C) 2019 PSYGIG株式会社
+#  * Copyright (C) 2019 Docker Inc.
+#  *
+#  * Licensed under the Apache License, Version 2.0 (the "License");
+#  * you may not use this file except in compliance with the License.
+#  * You may obtain a copy of the License at
+#  *
+#  * http://www.apache.org/licenses/LICENSE-2.0
+#  *
+#  * Unless required by applicable law or agreed to in writing, software
+#  * distributed under the License is distributed on an "AS IS" BASIS,
+#  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  * See the License for the specific language governing permissions and
+#  * limitations under the License.
+#  */
+
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
@@ -47,7 +64,7 @@ yaml.SafeDumper.add_representer(types.ServicePort, serialize_dict_type)
 
 
 def denormalize_config(config, image_digests=None):
-    result = {'version': str(V2_1) if config.version == V1 else str(config.version)}
+    result = {'version': str(config.version)}
     denormalized_services = [
         denormalize_service_dict(
             service_dict,
@@ -60,7 +77,7 @@ def denormalize_config(config, image_digests=None):
         for service_dict in denormalized_services
     }
 
-    for key in ('networks', 'volumes', 'secrets', 'configs'):
+    for key in ('secrets', 'configs'):
         config_dict = getattr(config, key)
         if not config_dict:
             continue
@@ -72,10 +89,6 @@ def denormalize_config(config, image_digests=None):
             if 'name' in conf:
                 if 'external' in conf:
                     conf['external'] = bool(conf['external'])
-
-            if 'attachable' in conf and config.version < V3_2:
-                # For compatibility mode, this option is invalid in v2
-                del conf['attachable']
 
     return result
 
@@ -124,9 +137,6 @@ def denormalize_service_dict(service_dict, version, image_digest=None):
         service_dict['restart'] = types.serialize_restart_spec(
             service_dict['restart']
         )
-
-    if version == V1 and 'network_mode' not in service_dict:
-        service_dict['network_mode'] = 'bridge'
 
     if 'depends_on' in service_dict and (version < V2_1 or version >= V3_0):
         service_dict['depends_on'] = sorted([

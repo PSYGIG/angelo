@@ -1,0 +1,7 @@
+version: '1.0'
+
+services:
+  redis:
+    command: redis-server
+  app:
+    command: app

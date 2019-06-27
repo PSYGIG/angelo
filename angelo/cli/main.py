@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*- 
 #  Copyright (C) 2019 PSYGIG株式会社
 
 from __future__ import absolute_import
@@ -19,8 +20,11 @@ from . import errors
 from . import signals
 from .. import __version__
 from ..config.serialize import serialize_config
+from ..config.environment import Environment
 from ..errors import StreamParseError
+from ..errors import OperationFailedError
 from ..progress_stream import StreamOutputError
+from ..system import NoSuchService
 from .command import get_config_from_options
 from .command import system_from_options
 from .docopt_command import DocoptDispatcher
@@ -43,6 +47,12 @@ def main():
         log.error("Aborting.")
         sys.exit(1)
     except (UserError) as e:
+        log.error(e.msg)
+        sys.exit(1)
+    except (NoSuchService) as e:
+        log.error(e.msg)
+        sys.exit(1)
+    except (OperationFailedError) as e:
         log.error(e.msg)
         sys.exit(1)
     except StreamOutputError as e:
@@ -157,15 +167,14 @@ class TopLevelCommand(object):
 
     Commands:
       config             Validate and view the Angelo file
-      down               Stop process
-      events             Receive real time events from containers
-      help               Get help on a command
-      kill               Kill processes
-      logs               View output from containers
-      ps                 List processes
-      stop               Stop services
-      top                Display the running processes
       up                 Start services
+      down               Stop services
+      restart            Restart services
+      help               Get help on a command
+      kill               Kill services
+      logs               View output from services
+      ps                 List services
+      top                Display the running services
       version            Show the Angelo version information
     """
 
@@ -220,13 +229,13 @@ class TopLevelCommand(object):
 
     def up(self, options):
         """
-        Starts, and attaches to process for a service.
+        Starts services defined in config file.
 
         Unless they are already running, this command also starts any linked services.
 
         The `angelo up` command aggregates the output of each service. When
-        the command exits, all processes are stopped. Running `angelo up -d`
-        starts the processes in the background and leaves them running.
+        the command exits, all services are stopped. Running `angelo up -d`
+        starts the services in the background and leaves them running.
 
         Usage: up [options] [--scale SERVICE=NUM...] [SERVICE...]
 
@@ -235,7 +244,6 @@ class TopLevelCommand(object):
                                        print new services names. Incompatible with
                                        --abort-on-services-exit.
             --no-color                 Produce monochrome output.
-            --quiet-pull               Pull without printing progress information
             --no-deps                  Don't start linked services.
             -t, --timeout TIMEOUT      Use this timeout in seconds for service
                                        shutdown when attached or when services are
@@ -244,6 +252,141 @@ class TopLevelCommand(object):
                                        service. Implies --abort-on-container-exit.
             --env-file PATH            Specify an alternate environment file
         """
+        start_deps = not options['--no-deps']
+        exit_value_from = exitval_from_opts(options, self.directory)
+        service_names = options['SERVICE']
+        timeout = timeout_from_opts(options)
+        detached = options.get('--detach')
+
+        if detached and exit_value_from:
+            raise UserError("--abort-on-container-exit and -d cannot be combined.")
+
+        environment_file = options.get('--env-file')
+        environment = Environment.from_env_file(self.root_dir, environment_file)
+  
+        self.directory.up(
+                    service_names=service_names,
+                    start_deps=start_deps,
+                    timeout=timeout,
+                    detached=detached,
+        )
+
+    def down(self, options):
+        """
+        Stops services created by `up`.
+
+        Usage: down [options] [SERVICE...]
+
+        Options:
+            -t, --timeout TIMEOUT   Specify a shutdown timeout in seconds.
+                                    (default: 10)
+            --env-file PATH         Specify an alternate environment file
+        """
+        service_names = options['SERVICE']
+        environment_file = options.get('--env-file')
+        environment = Environment.from_env_file(self.root_dir, environment_file)
+
+        timeout = timeout_from_opts(options)
+        self.directory.down(
+            service_names=service_names,
+            timeout=timeout)
+
+    def restart(self, options):
+        """
+        Restart running services.
+
+        Usage: restart [options] [SERVICE...]
+
+        Options:
+          -t, --timeout TIMEOUT      Specify a shutdown timeout in seconds.
+                                     (default: 10)
+        """
+        service_names = options['SERVICE']
+
+        self.directory.restart(
+            service_names=service_names,
+            timeout=timeout_from_opts(options))
+
+    def ps(self, options):
+        """
+        List services.
+    
+        Usage: ps [options] [SERVICE...]    
+        """
+        service_names = options['SERVICE']
+
+        self.directory.top(
+            service_names=service_names)
+
+    def top(self, options):
+        """
+        Display the running services
+
+        Usage: top [SERVICE...]
+        """
+        service_names = options['SERVICE']
+
+        self.directory.top(
+            service_names=service_names)
+
+    def restart(self, options):
+        """
+        Restart running services.
+
+        Usage: restart [options] [SERVICE...]
+
+        Options:
+          -t, --timeout TIMEOUT      Specify a shutdown timeout in seconds.
+                                     (default: 10)
+        """
+        service_names = options['SERVICE']
+
+        self.directory.restart(
+            service_names=service_names,
+            timeout=timeout_from_opts(options))
+
+    def kill(self, options):
+        """
+        Force stop services.
+
+        Usage: kill [options] [SERVICE...]
+        
+        Options:
+            -s SIGNAL         SIGNAL to send to the container.
+                              Default signal is SIGKILL.
+                              Can be one of SIGTERM, SIGHUP, 
+                              SIGINT, SIGQUIT, SIGKILL, 
+                              SIGUSR1, or SIGUSR2.
+        """
+        signal = options.get('-s', 'SIGKILL')
+
+        self.directory.kill(service_names=options['SERVICE'], signal=signal)
+
+    def logs(self, options):
+        """
+        View output from services.
+
+        Usage: logs [options] [SERVICE...]
+        
+        Options:
+            --no-color          Produce monochrome output.
+            -f, --follow        Follow log output.
+            --tail="all"        Number of lines to show from the end of the logs
+                                for each container.
+        """        
+        tail = options['--tail']
+        if tail is not None:
+            if tail.isdigit():
+                tail = int(tail)
+            elif tail == 'all':
+                tail = int(sys.maxsize)
+            else:
+                raise UserError("tail flag must be all or a number")
+
+        self.directory.logs(
+            service_names=options['SERVICE'],
+            follow=options['--follow'],
+            tail=tail)
 
     @classmethod
     def version(cls, options):
@@ -259,3 +402,19 @@ class TopLevelCommand(object):
             print(__version__)
         else:
             print(get_version_info('full'))
+
+def exitval_from_opts(options, project):
+    exit_value_from = options.get('--exit-code-from')
+    if exit_value_from:
+        if not options.get('--abort-on-container-exit'):
+            log.warning('using --exit-code-from implies --abort-on-container-exit')
+            options['--abort-on-container-exit'] = True
+        if exit_value_from not in [s.name for s in project.get_services()]:
+            log.error('No service named "%s" was found in your compose file.',
+                      exit_value_from)
+            sys.exit(2)
+    return exit_value_from
+
+def timeout_from_opts(options):
+    timeout = options.get('--timeout')
+    return None if timeout is None else int(timeout)

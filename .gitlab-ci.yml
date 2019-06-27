@@ -1,4 +1,4 @@
-image: "python:2.7"
+image: "python:3.6"
 
 variables:
   DATABASE_URL: postgresql://postgres:postgres@postgres:5432/medium_py_test
@@ -10,6 +10,11 @@ before_script:
 build:
   script:
     - pyinstaller --onefile --exclude-module PyInstaller angelo.spec
+  tags:
+    - docker
+
 test:
   script:
     - python -m pytest tests/
+  tags:
+    - docker

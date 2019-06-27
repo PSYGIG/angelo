@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*- 
 # /*
 #  * Copyright (C) 2019 PSYGIG株式会社
 #  * Copyright (C) 2019 Docker Inc.

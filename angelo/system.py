@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*- 
 # /*
 #  * Copyright (C) 2019 PSYGIG株式会社
 #  * Copyright (C) 2019 Docker Inc.
@@ -18,6 +19,8 @@
 import six
 
 from .process import Process
+from .supervisor import Supervisor
+from .errors import OperationFailedError
 
 class System(object):
     """
@@ -27,6 +30,7 @@ class System(object):
         self.name = name
         self.services = services
         self.config_version = config_version
+        self.supervisor = Supervisor(services)
 
 
     @classmethod
@@ -60,6 +64,164 @@ class System(object):
                 return service
 
         raise NoSuchService(name)
+
+    @property
+    def service_names(self):
+        return [service.name for service in self.services]
+
+    def validate_service_names(self, service_names):
+        """
+        Validate that the given list of service names only contains valid
+        services. Raises NoSuchService if one of the names is invalid.
+        """
+        valid_names = self.service_names
+        for name in service_names:
+            if name not in valid_names:
+                raise NoSuchService(name)
+
+    def get_services(self, service_names=None, include_deps=False):
+        """
+        Returns a list of this project's services filtered
+        by the provided list of names, or all services if service_names is None
+        or [].
+        If include_deps is specified, returns a list including the dependencies for
+        service_names, in order of dependency.
+        Preserves the original order of self.services where possible,
+        reordering as needed to resolve dependencies.
+        Raises NoSuchService if any of the named services do not exist.
+        """
+        if service_names is None or len(service_names) == 0:
+            service_names = self.service_names
+
+        unsorted = [self.get_service(name) for name in service_names]
+        services = [s for s in self.services if s in unsorted]
+        """
+        if include_deps:
+            services = reduce(self._inject_deps, services, [])
+        """
+        uniques = []
+        [uniques.append(s) for s in services if s not in uniques]
+
+        return uniques
+
+    def up(self,
+           service_names=None,
+           start_deps=True,
+           timeout=None,
+           detached=False,
+           remove_orphans=False,
+           ignore_orphans=False,
+           scale_override=None,
+           rescale=True,
+           start=True,
+           always_recreate_deps=False,
+           reset_container_image=False,
+           renew_anonymous_volumes=False,
+           silent=False,
+           ):
+
+        if service_names is None or len(service_names) == 0:
+            if not self.supervisor.is_running():
+                self.supervisor.run_supervisor()
+                exit()
+
+            self.supervisor.start_process()
+            return
+
+        if not self.supervisor.is_running():
+            raise OperationFailedError("Services must first be started with \'up\'")
+
+        services = self.get_services(
+            service_names,
+            include_deps=start_deps)
+
+        for service in services:
+            self.supervisor.start_process(service.name)
+
+    def down(
+            self,
+            service_names=None,
+            remove_orphans=False,
+            timeout=None,
+            ignore_orphans=False):
+
+        if not self.supervisor.is_running():
+            raise OperationFailedError("Services must first be started with \'up\'")
+
+        if service_names is None or len(service_names) == 0:
+            self.supervisor.stop_process()
+            return
+
+        services = self.get_services(
+            service_names)
+
+        for service in services:
+            self.supervisor.stop_process(service.name)
+
+    def restart(self, service_names=None, timeout=None):
+        
+        if not self.supervisor.is_running():
+            raise OperationFailedError("Services must first be started with \'up\'")
+
+        if service_names is None or len(service_names) == 0:
+            self.supervisor.restart_process()
+            return
+
+        services = self.get_services(
+            service_names)
+
+        for service in services:
+            self.supervisor.restart_process(service.name)
+
+    def kill(self, service_names=None, signal="SIGKILL"):
+
+        if not self.supervisor.is_running():
+            raise OperationFailedError("Services must first be started with \'up\'")
+
+        if signal is None:
+            signal = "SIGKILL"
+                
+        if service_names is None or len(service_names) == 0:
+            self.supervisor.signal_process("all", signal)
+            return
+
+        services = self.get_services(
+            service_names)
+
+        for service in services:
+            self.supervisor.signal_process(service.name, signal)
+
+    def top(self, service_names=None):
+        
+        if not self.supervisor.is_running():
+            raise OperationFailedError("Services must first be started with \'up\'")
+
+        if service_names is None or len(service_names) == 0:
+            self.supervisor.get_process_status()
+            return
+
+        services = self.get_services(
+            service_names)
+
+        for service in services:
+            self.supervisor.get_process_status(service.name)
+
+    def logs(self, 
+             service_names=None,
+             follow=False,
+             tail=None):
+
+        if not self.supervisor.is_running():
+            raise OperationFailedError("Services must first be started with \'up\'")
+
+        if tail is None:
+            tail = 1600
+
+        services = self.get_services(
+            service_names)
+
+        for service in services:
+            self.supervisor.logs(service.name, follow, tail)
 
 class NoSuchService(Exception):
     def __init__(self, name):

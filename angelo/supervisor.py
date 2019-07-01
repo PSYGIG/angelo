@@ -56,6 +56,7 @@ import traceback
 from configparser import RawConfigParser, NoSectionError, NoOptionError
 from io import StringIO
 from supervisor import supervisord, supervisorctl
+from signal import SIGTERM
 
 class Supervisor(object):
 
@@ -75,19 +76,19 @@ loglevel=warn
     def __init__(self, services):
         self.services = services
         self.pid_file = "supervisord.pid"
+        self.mqtt_pid = "mqtt.pid"
 
     def run_supervisor(self):
         cfg_file = OnDemandStringIO(self.get_merged_config)
         newpid = os.fork()
         if newpid == 0:
-            supervisord.main(("-c",cfg_file))        
+            supervisord.main(("-c",cfg_file))
         exit()
-        
-        
+
     def start_process(self, name="all"):
         cfg_file = OnDemandStringIO(self.get_merged_config)
         try:
-            supervisorctl.main(("-c",cfg_file, "start", name))   
+            supervisorctl.main(("-c",cfg_file, "start", name))
         except:
             pass
 
@@ -101,10 +102,15 @@ loglevel=warn
     def restart_process(self, name="all"):
         cfg_file = OnDemandStringIO(self.get_merged_config)
         try:
-            supervisorctl.main(("-c",cfg_file, "restart", name))  
+            supervisorctl.main(("-c", cfg_file, "restart", name))
         except:
             pass
-            
+
+    def reload_config(self):
+        os.kill(self.get_pid(), SIGTERM)
+        time.sleep(3)
+        self.run_supervisor()
+
     def signal_process(self, name="all", signal="SIGKILL"):
         cfg_file = OnDemandStringIO(self.get_merged_config)
         try:

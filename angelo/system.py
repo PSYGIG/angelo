@@ -17,10 +17,13 @@
 #  */
 
 import six
+from os import kill, fork
+from signal import SIGTERM
 
 from .process import Process
 from .supervisor import Supervisor
 from .errors import OperationFailedError
+from .mqtt import MqttClient
 
 class System(object):
     """
@@ -31,7 +34,7 @@ class System(object):
         self.services = services
         self.config_version = config_version
         self.supervisor = Supervisor(services)
-
+        self.mqtt_client = MqttClient("mqtt.pid")
 
     @classmethod
     def from_config(cls, name, config_data, default_platform=None):
@@ -120,16 +123,21 @@ class System(object):
            silent=False,
            ):
 
+        pid = fork()
+        if pid == 0:
+            if not self.mqtt_client.is_running():
+                self.mqtt_client.start()
+            return
+
         if service_names is None or len(service_names) == 0:
             if not self.supervisor.is_running():
                 self.supervisor.run_supervisor()
-                exit()
 
             self.supervisor.start_process()
             return
 
         if not self.supervisor.is_running():
-            raise OperationFailedError("Services must first be started with \'up\'")
+            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
         services = self.get_services(
             service_names,
@@ -146,7 +154,7 @@ class System(object):
             ignore_orphans=False):
 
         if not self.supervisor.is_running():
-            raise OperationFailedError("Services must first be started with \'up\'")
+            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
         if service_names is None or len(service_names) == 0:
             self.supervisor.stop_process()
@@ -158,10 +166,66 @@ class System(object):
         for service in services:
             self.supervisor.stop_process(service.name)
 
+    def start(self,
+           start_deps=True,
+           timeout=None,
+           detached=False,
+           remove_orphans=False,
+           ignore_orphans=False,
+           scale_override=None,
+           rescale=True,
+           start=True,
+           always_recreate_deps=False,
+           reset_container_image=False,
+           renew_anonymous_volumes=False,
+           silent=False,
+           ):
+
+        pid = fork()
+        if pid == 0:
+            if not self.mqtt_client.is_running():
+                # Anything after self.mqtt_client.start() will never be executed because parent processes are killed when
+                # creating the daemon, daemon blocks the program, and killing the client ends the program.
+                # Therefore, by running it in a child process, the supervisor is still able to run
+                self.mqtt_client.start()
+            return
+
+        if not self.supervisor.is_running():
+            # Starting the supervisor starts processes so self.supervisor.start_process() should not be run.
+            self.supervisor.run_supervisor()
+
+        if not self.supervisor.is_running():
+            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
+
+        self.supervisor.start_process()
+
+    def stop(self, timeout=None):
+        if not self.supervisor.is_running() and not self.mqtt_client.is_running:
+            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
+
+        try:
+            kill(self.supervisor.get_pid(), SIGTERM)
+            print('Supervisor shutting down...')
+        except ProcessLookupError as e:
+            print("No supervisor running")
+        except TypeError as e:
+            print("No supervisor process id found. Already killed?")
+
+        try:
+            kill(self.mqtt_client.get_pid(), SIGTERM)
+            print('MQTT Client shutting down...')
+        except ProcessLookupError as e:
+            print("No MQTT Client running")
+        except TypeError as e:
+            print("No MQTT Client process id found. Already killed?")
+
+    def reload(self):
+        self.supervisor.reload_config()
+
     def restart(self, service_names=None, timeout=None):
         
         if not self.supervisor.is_running():
-            raise OperationFailedError("Services must first be started with \'up\'")
+            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
         if service_names is None or len(service_names) == 0:
             self.supervisor.restart_process()
@@ -176,7 +240,7 @@ class System(object):
     def kill(self, service_names=None, signal="SIGKILL"):
 
         if not self.supervisor.is_running():
-            raise OperationFailedError("Services must first be started with \'up\'")
+            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
         if signal is None:
             signal = "SIGKILL"
@@ -194,7 +258,7 @@ class System(object):
     def top(self, service_names=None):
         
         if not self.supervisor.is_running():
-            raise OperationFailedError("Services must first be started with \'up\'")
+            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
         if service_names is None or len(service_names) == 0:
             self.supervisor.get_process_status()
@@ -212,7 +276,7 @@ class System(object):
              tail=None):
 
         if not self.supervisor.is_running():
-            raise OperationFailedError("Services must first be started with \'up\'")
+            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
         if tail is None:
             tail = 1600

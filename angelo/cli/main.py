@@ -13,6 +13,8 @@ import pipes
 import re
 import subprocess
 import sys
+import os
+import errno
 from distutils.spawn import find_executable
 from inspect import getdoc
 
@@ -41,6 +43,11 @@ console_handler = logging.StreamHandler(sys.stderr)
 def main():
     signals.ignore_sigpipe()
     try:
+        conf_file = os.path.expanduser("~") + "/.angelo/angelo.conf"
+        if not os.path.exists(conf_file):
+            os.makedirs(os.path.dirname(conf_file), exist_ok=True)
+            with open(conf_file, 'w+') as f:
+                f.write('[app.psygig.com]')
         command = dispatch()
         command()
     except (KeyboardInterrupt, signals.ShutdownException):
@@ -167,6 +174,7 @@ class TopLevelCommand(object):
 
     Commands:
       config             Validate and view the Angelo file
+      register           Register device on the PSYGIG platform
       up                 Start services
       down               Stop services
       start              Start all processes (services, MQTT client, webserver)
@@ -229,6 +237,35 @@ class TopLevelCommand(object):
             return
 
         print(serialize_config(angelo_config, image_digests, not options['--no-interpolate']))
+
+    def register(self, options):
+        """
+        Register this device onto the PSYGIG platform.
+        Required to communicate with the device management app.
+
+        Usage: register
+        """
+        identifier = input("Identifier: ").strip()
+        id = input("App ID: ").strip()
+        secret = input("App Secret: ").strip()
+        try:
+            assert identifier != ""
+            if len(id.split(' ')) == 1 or len(secret.split(' ')) == 1:
+                raise NameError("ID and/or secret must not have spaces.")
+            assert id != ""
+            assert secret != ""
+            int(id)
+        except NameError as e:
+            logging.error(e)
+            sys.exit(1)
+        except ValueError as e:
+            logging.error("ID must be a number.")
+            sys.exit(1)
+        except AssertionError as e:
+            logging.error("All fields are required.")
+            sys.exit(1)
+
+        self.directory.register(identifier, id, secret)
 
     def up(self, options):
         """

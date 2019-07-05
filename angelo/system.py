@@ -17,13 +17,20 @@
 #  */
 
 import six
-from os import kill, fork
+import requests
+import json
+import os
+import configparser
+import logging
 from signal import SIGTERM
 
 from .process import Process
 from .supervisor import Supervisor
 from .errors import OperationFailedError
 from .mqtt import MqttClient
+
+# TODO: Change to staging/production?
+DEVICE_REGISTRATION_API_ENDPOINT = "http://localhost:4000/api/v1/device"
 
 class System(object):
     """
@@ -34,7 +41,8 @@ class System(object):
         self.services = services
         self.config_version = config_version
         self.supervisor = Supervisor(services)
-        self.mqtt_client = MqttClient("mqtt.pid")
+        self.angelo_conf = os.path.expanduser("~") + "/.angelo/angelo.conf"
+        self.mqtt_client = MqttClient("mqtt.pid", self.angelo_conf)
 
     @classmethod
     def from_config(cls, name, config_data, default_platform=None):
@@ -107,6 +115,33 @@ class System(object):
 
         return uniques
 
+    def register(self, identifier=None, id=None, secret=None):
+        data = {
+            'identifier': identifier,
+            'app_id': id,
+            'app_secret': secret
+        }
+        response = requests.post(DEVICE_REGISTRATION_API_ENDPOINT, data=data)
+        data = json.loads(response.text)
+
+        if response.status_code == 201:
+            config = configparser.ConfigParser()
+            config['app.psygig.com'] = {'AppSecret': secret,
+                                        'AppId': id,
+                                        'BrokerSecret': data['broker_app_secret'],
+                                        'BrokerId': data['broker_app_id'],
+                                        'ChannelId': data['channel_id'],
+                                        'Identifier': identifier}
+            with open(self.angelo_conf, 'w+') as f:
+                config.write(f)
+            logging.info("Device registered.")
+        elif response.status_code == 400:
+            logging.error(data['message'])
+        elif response.status_code == 200:
+            logging.error(data['message'])
+        elif response.status_code == 401:
+            logging.error(data['message'])
+
     def up(self,
            service_names=None,
            start_deps=True,
@@ -123,7 +158,7 @@ class System(object):
            silent=False,
            ):
 
-        pid = fork()
+        pid = os.fork()
         if pid == 0:
             if not self.mqtt_client.is_running():
                 self.mqtt_client.start()
@@ -181,7 +216,7 @@ class System(object):
            silent=False,
            ):
 
-        pid = fork()
+        pid = os.fork()
         if pid == 0:
             if not self.mqtt_client.is_running():
                 # Anything after self.mqtt_client.start() will never be executed because parent processes are killed when
@@ -204,20 +239,24 @@ class System(object):
             raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
         try:
-            kill(self.supervisor.get_pid(), SIGTERM)
-            print('Supervisor shutting down...')
+            os.kill(self.supervisor.get_pid(), SIGTERM)
+            logging.debug('Supervisor shutting down...')
         except ProcessLookupError as e:
-            print("No supervisor running")
+            logging.debug("No supervisor running. Removing pid file.")
+            os.remove(self.supervisor.pid_file)
         except TypeError as e:
-            print("No supervisor process id found. Already killed?")
+            logging.debug("No supervisor process id found. Already killed?")
+            logging.error("This service may have already been stopped.")
 
         try:
-            kill(self.mqtt_client.get_pid(), SIGTERM)
-            print('MQTT Client shutting down...')
+            os.kill(self.mqtt_client.get_pid(), SIGTERM)
+            logging.debug('MQTT Client shutting down...')
         except ProcessLookupError as e:
-            print("No MQTT Client running")
+            logging.debug("No MQTT Client running. Removing pid file.")
+            self.mqtt_client.delpid()
         except TypeError as e:
-            print("No MQTT Client process id found. Already killed?")
+            logging.debug("No MQTT Client process id found. Already killed?")
+            logging.error("This service may have already been stopped.")
 
     def reload(self):
         self.supervisor.reload_config()

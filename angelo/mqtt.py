@@ -1,19 +1,25 @@
 """Generic linux daemon base class for python 3.x."""
 
-import sys, os, time, atexit, signal, base64, json
+import sys, os, time, signal, base64, json, configparser, socket
 import paho.mqtt.client as mqtt
 import errno
+import logging
 
 class daemon:
     """A generic daemon class.
 
     Usage: subclass the daemon class and override the run() method."""
 
-    def __init__(self, pidfile):
+    def __init__(self, pidfile, conf):
         self.pidfile = pidfile
+        self.conf = conf
 
     def daemonize(self):
         """Deamonize class. UNIX double fork mechanism."""
+        if not os.path.exists(self.conf):
+            logging.error("Check that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
+            sys.exit(1)
+
         try:
             pid = os.fork()
             if pid > 0:
@@ -46,7 +52,6 @@ class daemon:
         # os.dup2(so.fileno(), sys.stdout.fileno())
         os.dup2(se.fileno(), sys.stderr.fileno())
         # write pidfile
-        # atexit.register(self.delpid)
         pid = str(os.getpid())
         with open(self.pidfile, 'w+') as f:
             f.write(pid + '\n')
@@ -122,44 +127,78 @@ class MqttClient(daemon):
     Subclass of daemon to run mqtt loop as a background process
     """
 
-    def __init__(self, pidfile):
-        super().__init__(pidfile)
+    def __init__(self, pidfile, conf):
+        super().__init__(pidfile, conf)
 
     def run(self):
-        print("Starting MQTT Client...")
+        conf = self.read_conf()
+        logging.debug("Starting MQTT Client...")
+        channel_id = conf['channelid']
+        channel = "{}/config".format(channel_id)
+        app_id = conf['appid']
+        app_secret = conf['appsecret']
+        identifier = conf['identifier']
+        broker_app_id = conf['brokerid']
+        broker_app_secret = conf['brokersecret']
+        payload = self.create_config_payload(identifier=identifier, app_id=app_id, app_secret=app_secret)
         killer = GracefulKiller()
-        client = mqtt.Client("test")
-        client.username_pw_set("admin", "public")
+        client = mqtt.Client(identifier)
+        client.username_pw_set(broker_app_id, broker_app_secret)
         client.on_message = self.on_message
+        # TODO: Change host to staging/production?
         client.connect("localhost", port=1883)
         client.loop_start()
-        client.subscribe("config")
-        client.publish("config", payload=self.create_config_payload(), qos=1)
+        client.subscribe(channel)
+        client.publish(channel, payload=payload)
         while not killer.kill_now:
             pass
         client.loop_stop()
         client.disconnect()
         self.stop()
 
+    def read_conf(self):
+        config = configparser.ConfigParser()
+        config.read(self.conf)
+        if 'app.psygig.com' not in config.sections():
+            logging.error("MQTT Client was not started for the following reasons:")
+            logging.error(" - Could not find the correct configs under 'app.psygig.com' the MQTT client.")
+            logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
+            self.delpid()
+            sys.exit(1)
+        elif config.options('app.psygig.com') == []:
+            logging.error("MQTT Client was not started for the following reasons:")
+            logging.error(" - No configs found inside ~/.angelo/angelo.conf.")
+            logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
+            self.delpid()
+            sys.exit(1)
+        return config['app.psygig.com']
+
     def on_message(self, client, userdata, message):
-        response_payload = message.payload.decode("utf-8")
-        if (response_payload):
-            self.update_config_file(response_payload)
+        """
+        Handle publish response from MQTT broker by overwriting
+        the current config file (angelo.yml) if the message source
+        is not from the device.
+        """
+        response_payload = message.payload.decode('utf-8')
+        context = json.loads(response_payload)
+        if response_payload:
+            if context['source'] != socket.gethostbyname(socket.gethostname()):
+                self.update_config_file(response_payload)
 
-
-    def create_config_payload(self):
-        with open("angelo.yml", 'r') as f:
+    def create_config_payload(self, identifier, app_id, app_secret):
+        with open('angelo.yml', 'r') as f:
             config = f.read()
             # decode bytes to string after encoding to b64
             encoded_config = base64.b64encode(config.encode('utf-8')).decode('utf-8')
-            payload = {"context": encoded_config, "identifier": "test", "app_id": "", "app_secret": ""}
+            source = socket.gethostbyname(socket.gethostname())
+            payload = {'context': encoded_config, 'identifier': identifier, 'app_id': app_id, 'app_secret': app_secret, 'source': source}
             string_payload = json.dumps(payload)
             return string_payload
 
     def update_config_file(self, context):
-        data = json.loads(context)["context"]
+        data = json.loads(context)['context']
         new_config = base64.b64decode(data).decode('utf-8')
-        with open("angelo.yml", 'w+') as f:
+        with open('angelo.yml', 'w+') as f:
             f.write(new_config)
 
     def is_running(self):
@@ -174,7 +213,7 @@ class MqttClient(daemon):
             if e.errno == errno.ESRCH:
                 # In this case the PID file shouldn't have existed in
                 # the first place, so we remove it
-                os.remove(self.pid)
+                os.remove(self.pidfile)
                 return False
             # We may also get an exception if we're not allowed to use
             # kill on the process, but that means that the process does
@@ -203,7 +242,3 @@ class GracefulKiller:
 
     def exit_gracefully(self, signum, frame):
         self.kill_now = True
-
-if __name__ == "__main__":
-    MqttClient("mqtt.pid").start()
-    print("stopping")

@@ -13,6 +13,8 @@ import pipes
 import re
 import subprocess
 import sys
+import os
+import errno
 from distutils.spawn import find_executable
 from inspect import getdoc
 
@@ -41,6 +43,11 @@ console_handler = logging.StreamHandler(sys.stderr)
 def main():
     signals.ignore_sigpipe()
     try:
+        conf_file = os.path.expanduser("~") + "/.angelo/angelo.conf"
+        if not os.path.exists(conf_file):
+            os.makedirs(os.path.dirname(conf_file), exist_ok=True)
+            with open(conf_file, 'w+') as f:
+                f.write('[app.psygig.com]')
         command = dispatch()
         command()
     except (KeyboardInterrupt, signals.ShutdownException):
@@ -167,8 +174,12 @@ class TopLevelCommand(object):
 
     Commands:
       config             Validate and view the Angelo file
+      register           Register device on the PSYGIG platform
       up                 Start services
       down               Stop services
+      start              Start all processes (services, MQTT client, webserver)
+      stop               Stop all processes
+      reload             Reload a new config file and start services
       restart            Restart services
       help               Get help on a command
       kill               Kill services
@@ -227,6 +238,35 @@ class TopLevelCommand(object):
 
         print(serialize_config(angelo_config, image_digests, not options['--no-interpolate']))
 
+    def register(self, options):
+        """
+        Register this device onto the PSYGIG platform.
+        Required to communicate with the device management app.
+
+        Usage: register
+        """
+        identifier = input("Identifier: ").strip()
+        id = input("App ID: ").strip()
+        secret = input("App Secret: ").strip()
+        try:
+            assert identifier != ""
+            if len(id.split(' ')) == 1 or len(secret.split(' ')) == 1:
+                raise NameError("ID and/or secret must not have spaces.")
+            assert id != ""
+            assert secret != ""
+            int(id)
+        except NameError as e:
+            logging.error(e)
+            sys.exit(1)
+        except ValueError as e:
+            logging.error("ID must be a number.")
+            sys.exit(1)
+        except AssertionError as e:
+            logging.error("All fields are required.")
+            sys.exit(1)
+
+        self.directory.register(identifier, id, secret)
+
     def up(self, options):
         """
         Starts services defined in config file.
@@ -237,7 +277,7 @@ class TopLevelCommand(object):
         the command exits, all services are stopped. Running `angelo up -d`
         starts the services in the background and leaves them running.
 
-        Usage: up [options] [--scale SERVICE=NUM...] [SERVICE...]
+        Usage: up [options] [SERVICE...]
 
         Options:
             -d, --detach               Detached mode: Run services in the background,
@@ -263,7 +303,7 @@ class TopLevelCommand(object):
 
         environment_file = options.get('--env-file')
         environment = Environment.from_env_file(self.root_dir, environment_file)
-  
+
         self.directory.up(
                     service_names=service_names,
                     start_deps=start_deps,
@@ -290,6 +330,68 @@ class TopLevelCommand(object):
         self.directory.down(
             service_names=service_names,
             timeout=timeout)
+
+    def start(self, options):
+        """
+        Starts all services defined in the config file, MQTT client, and webserver.
+
+        Usage: start [options]
+
+        Options:
+            -d, --detach               Detached mode: Run services in the background,
+                                       print new services names. Incompatible with
+                                       --abort-on-services-exit.
+            --no-color                 Produce monochrome output.
+            --no-deps                  Don't start linked services.
+            -t, --timeout TIMEOUT      Use this timeout in seconds for service
+                                       shutdown when attached or when services are
+                                       already running. (default: 10)
+            --exit-code-from SERVICE   Return the exit code of the selected service
+                                       service. Implies --abort-on-container-exit.
+            --env-file PATH            Specify an alternate environment file
+        """
+        start_deps = not options['--no-deps']
+        exit_value_from = exitval_from_opts(options, self.directory)
+        timeout = timeout_from_opts(options)
+        detached = options.get('--detach')
+
+        if detached and exit_value_from:
+            raise UserError("--abort-on-container-exit and -d cannot be combined.")
+
+        environment_file = options.get('--env-file')
+        environment = Environment.from_env_file(self.root_dir, environment_file)
+
+        self.directory.start(
+            start_deps=start_deps,
+            timeout=timeout,
+            detached=detached,
+        )
+
+    def stop(self, options):
+        """
+        Stops all processes created by `start` and `up`.
+
+        Usage: stop [options]
+
+        Options:
+            -t, --timeout TIMEOUT   Specify a shutdown timeout in seconds.
+                                    (default: 10)
+            --env-file PATH         Specify an alternate environment file
+        """
+        environment_file = options.get('--env-file')
+        environment = Environment.from_env_file(self.root_dir, environment_file)
+
+        timeout = timeout_from_opts(options)
+        self.directory.stop(
+            timeout=timeout)
+
+    def reload(self, options):
+        """
+        Reload new config file on the system and start services defined in new config file.
+
+        Usage: reload
+        """
+        self.directory.reload()
 
     def restart(self, options):
         """

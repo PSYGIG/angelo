@@ -2,11 +2,21 @@
 
 block_cipher = None
 
+import os
+import importlib
+
+package_imports = [['supervisor', ['version.txt']]]
+
+datas = []
+for package, files in package_imports:
+    proot = os.path.dirname(importlib.import_module(package).__file__)
+    datas.extend((os.path.join(proot, f), package) for f in files)
+
 
 a = Analysis(['bin/angelo'],
              pathex=['.'],
              binaries=[],
-             datas=[],
+             datas=datas,
              hiddenimports=[],
              hookspath=[],
              runtime_hooks=[],

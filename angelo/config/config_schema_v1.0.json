@@ -1,0 +1,269 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "id": "config_schema_v1.0.json",
+  "type": "object",
+  "required": ["version"],
+
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+
+    "services": {
+      "id": "#/properties/services",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/definitions/service"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "secrets": {
+      "id": "#/properties/secrets",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/definitions/secret"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "configs": {
+      "id": "#/properties/configs",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/definitions/config"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "patternProperties": {"^x-": {}},
+  "additionalProperties": false,
+
+  "definitions": {
+
+    "service": {
+      "id": "#/definitions/service",
+      "type": "object",
+
+      "properties": {
+        "deploy": {"$ref": "#/definitions/deployment"},
+        "command": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}}
+          ]
+        },
+        "configs": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {"type": "string"},
+              {
+                "type": "object",
+                "properties": {
+                  "source": {"type": "string"},
+                  "target": {"type": "string"},
+                  "uid": {"type": "string"},
+                  "gid": {"type": "string"},
+                  "mode": {"type": "number"}
+                }
+              }
+            ]
+          }
+        },
+        "credential_spec": {"type": "object", "properties": {
+          "file": {"type": "string"},
+          "registry": {"type": "string"}
+        }},
+        "depends_on": {"$ref": "#/definitions/list_of_strings"},
+        "devices": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "dns": {"$ref": "#/definitions/string_or_list"},
+        "dns_search": {"$ref": "#/definitions/string_or_list"},
+        "domainname": {"type": "string"},
+        "entrypoint": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}}
+          ]
+        },
+        "env_file": {"$ref": "#/definitions/string_or_list"},
+        "environment": {"$ref": "#/definitions/list_or_dict"},
+
+        "external_links": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "healthcheck": {"$ref": "#/definitions/healthcheck"},
+        "hostname": {"type": "string"},
+        "image": {"type": "string"},
+        "init": {"type": "boolean"},
+        "ipc": {"type": "string"},
+        "isolation": {"type": "string"},
+        "labels": {"$ref": "#/definitions/list_or_dict"},
+        "links": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "logging": {
+            "type": "object",
+
+            "properties": {
+                "driver": {"type": "string"},
+                "options": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^.+$": {"type": ["string", "number", "null"]}
+                  }
+                }
+            },
+            "additionalProperties": false
+        },
+        "mac_address": {"type": "string"},
+        "pid": {"type": ["string", "null"]},
+        "read_only": {"type": "boolean"},
+        "restart": {"type": "string"},
+        "security_opt": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "shm_size": {"type": ["number", "string"]},
+        "secrets": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {"type": "string"},
+              {
+                "type": "object",
+                "properties": {
+                  "source": {"type": "string"},
+                  "target": {"type": "string"},
+                  "uid": {"type": "string"},
+                  "gid": {"type": "string"},
+                  "mode": {"type": "number"}
+                }
+              }
+            ]
+          }
+        },
+        "sysctls": {"$ref": "#/definitions/list_or_dict"},
+        "stdin_open": {"type": "boolean"},
+        "stop_grace_period": {"type": "string", "format": "duration"},
+        "stop_signal": {"type": "string"},
+        "tty": {"type": "boolean"},
+        "ulimits": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-z]+$": {
+              "oneOf": [
+                {"type": "integer"},
+                {
+                  "type":"object",
+                  "properties": {
+                    "hard": {"type": "integer"},
+                    "soft": {"type": "integer"}
+                  },
+                  "required": ["soft", "hard"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "user": {"type": "string"},
+        "userns_mode": {"type": "string"},
+        "working_dir": {"type": "string"}
+      },
+      "patternProperties": {"^x-": {}},
+      "additionalProperties": false
+    },
+
+    "healthcheck": {
+      "id": "#/definitions/healthcheck",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "disable": {"type": "boolean"},
+        "interval": {"type": "string", "format": "duration"},
+        "retries": {"type": "number"},
+        "test": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}}
+          ]
+        },
+        "timeout": {"type": "string", "format": "duration"},
+        "start_period": {"type": "string", "format": "duration"}
+      }
+    },
+    "secret": {
+      "id": "#/definitions/secret",
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "file": {"type": "string"},
+        "external": {
+          "type": ["boolean", "object"],
+          "properties": {
+            "name": {"type": "string"}
+          }
+        },
+        "labels": {"$ref": "#/definitions/list_or_dict"}
+      },
+      "patternProperties": {"^x-": {}},
+      "additionalProperties": false
+    },
+
+    "config": {
+      "id": "#/definitions/config",
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "file": {"type": "string"},
+        "external": {
+          "type": ["boolean", "object"],
+          "properties": {
+            "name": {"type": "string"}
+          }
+        },
+        "labels": {"$ref": "#/definitions/list_or_dict"}
+      },
+      "patternProperties": {"^x-": {}},
+      "additionalProperties": false
+    },
+
+    "string_or_list": {
+      "oneOf": [
+        {"type": "string"},
+        {"$ref": "#/definitions/list_of_strings"}
+      ]
+    },
+
+    "list_of_strings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+
+    "list_or_dict": {
+      "oneOf": [
+        {
+          "type": "object",
+          "patternProperties": {
+            ".+": {
+              "type": ["string", "number", "null"]
+            }
+          },
+          "additionalProperties": false
+        },
+        {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      ]
+    },
+
+    "constraints": {
+      "service": {
+        "id": "#/definitions/constraints/service",
+        "anyOf": [
+          {"required": ["command"]}
+        ]
+      }
+    }
+  }
+}

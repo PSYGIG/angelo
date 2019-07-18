@@ -1,5 +1,15 @@
 # Angelo
+Device Management with Instant Configurations and Alerts
 
+Featuring:
+- Instant & secured configurations of software processes and parameters
+- Real-time monitoring of device health, including system resource metrics, logs, and events
+
+## Run
+
+```python
+bin/angelo
+```
 ## Commands
 
 - **up** [service_name] - Starts service(s) based on the configuration file and connects to PSYGIG's platform if not already connected
@@ -10,20 +20,19 @@
 - **reload** - Rereads the configuration file and restarts services based on the newly read configuration file
 - **ps**/**top** - View status of services started by angelo
 
-## Installation
+## Executable
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `angelo` to your list of dependencies in `mix.exs`:
+Generate binary executable with PyInstaller via:
 
-```elixir
-def deps do
-  [
-    {:angelo, "~> 0.1.0"}
-  ]
-end
+```python
+venv3/bin/pyinstaller --onefile --exclude-module pycrypto --exclude-module PyInstaller bin/angelo
 ```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/angelo](https://hexdocs.pm/angelo).
+or if angelo.spec is already generated:
+```python
+venv3/bin/pyinstaller --onefile --exclude-module PyInstaller angelo.spec
+```
+Run distributable with
+```python
+dist/angelo
+```
 

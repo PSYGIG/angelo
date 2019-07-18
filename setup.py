@@ -36,8 +36,6 @@ install_requires = [
     'requests >= 2.6.1, != 2.11.0, != 2.12.2, != 2.18.0, < 2.21',
     'texttable >= 0.9.0, < 0.10',
     'websocket-client >= 0.32.0, < 1.0',
-    'docker[ssh] >= 3.7.0, < 4.0',
-    'dockerpty >= 0.4.1, < 0.5',
     'six >= 1.3.0, < 2',
     'jsonschema >= 2.5.1, < 3',
 ]
@@ -76,12 +74,12 @@ except Exception as e:
 setup(
     name='angelo',
     version=find_version("angelo", "__init__.py"),
-    description='Multi-container orchestration for Docker',
+    description='Device Management with Instant Configurations and Alerts',
     long_description=read('README.md'),
     long_description_content_type='text/markdown',
-    url='https://www.docker.com/',
+    url='https://www.psygig.com/',
     project_urls={
-        'Documentation': 'https://psygig.com/angelo/overview',
+        'Documentation': 'https://github.com/psygig/angelo',
         'Changelog': 'https://github.com/psygig/angelo/blob/release/CHANGELOG.md',
         'Source': 'https://github.com/psygig/angelo',
         'Tracker': 'https://github.com/psygig/angelo/issues',

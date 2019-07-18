@@ -250,7 +250,7 @@ class TopLevelCommand(object):
         secret = input("App Secret: ").strip()
         try:
             assert identifier != ""
-            if len(id.split(' ')) == 1 or len(secret.split(' ')) == 1:
+            if len(id.split(' ')) != 1 or len(secret.split(' ')) != 1:
                 raise NameError("ID and/or secret must not have spaces.")
             assert id != ""
             assert secret != ""

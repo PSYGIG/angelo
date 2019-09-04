@@ -490,10 +490,6 @@ class TopLevelCommand(object):
         Usage: logs [options] [SERVICE...]
         
         Options:
-            --no-color          Produce monochrome output.
-            -f, --follow        Follow log output.
-            --tail="all"        Number of lines to show from the end of the logs
-                                for each container.
         """        
         tail = options['--tail']
         if tail is not None:
@@ -513,35 +509,47 @@ class TopLevelCommand(object):
         """
         Send live video stream from device to server.
 
-        Usage: logs [options] [SERVICE...]
+        Usage: live
 
-        Options:
-            --no-color          Produce monochrome output.
-            -f, --follow        Follow log output.
-            --tail="all"        Number of lines to show from the end of the logs
-                                for each container.
         """
         Gst.init(None)
         if not check_plugins():
             sys.exit(1)
-        parser = argparse.ArgumentParser()
-        parser.add_argument('peerid', help='String ID of the peer to connect to')
-        parser.add_argument('--server', help='Signalling server to connect to, eg "wss://127.0.0.1:8443"')
-
-        args = parser.parse_args()
 
         our_id = random.randrange(10, 10000)
         server = "wss://staging.psygig.com:8443"
         server = "ws://localhost:8443"
         #server = None
-        peerid = 1234
+        peerid = "60ac436f-f01e-46c6-9677-cde0950e1b5e"
 
         c = WebRTCClient(our_id, peerid, server)
         asyncio.get_event_loop().run_until_complete(c.connect())
         res = asyncio.get_event_loop().run_until_complete(c.loop())
+        sys.exit(res)
 
     def broadcast(self, options):
-        pass
+        """
+        Broadcast video stream from device to all clients connected to server
+
+        Usage: broadcast
+
+        """
+
+        cmd = "gst-launch-1.0 v4l2src device=/dev/video0 ! queue ! videoconvert ! queue ! x264enc ! flvmux streamable=true ! queue ! rtmpsink location="
+
+        nv_cmd = "gst-launch-1.0 -e nvarguscamerasrc ! 'video/x-raw(memory:NVMM), width=(int)1920, height=(int)1080, format=(string)NV12, \
+        framerate=(fraction)30/1' ! nvvidconv flip-method=0 ! 'video/x-raw, format=(string)BGRx' ! queue ! videoconvert ! queue ! \
+        x264enc ! flvmux streamable=true ! queue ! rtmpsink location="
+
+        location = "rtmp://52.185.136.118/LiveApp/242243369345776013882004"
+
+        if is_jetson_nano():
+            cmd = nv_cmd + location
+        else:
+            cmd = cmd + location
+
+        print("Broadcast starting now...")
+        subprocess.check_output(cmd, shell=True)
 
     @classmethod
     def version(cls, options):
@@ -557,6 +565,17 @@ class TopLevelCommand(object):
             print(__version__)
         else:
             print(get_version_info('full'))
+
+def is_jetson_nano():
+    answer = False
+    cmd = "cat /proc/device-tree/model"
+    try:
+        result = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+        if result == 'jetson-nano':
+            answer = True
+    except subprocess.CalledProcessError:
+        pass
+    return answer
 
 def check_plugins():
     needed = ["opus", "vpx", "nice", "webrtc", "dtls", "srtp", "rtp",

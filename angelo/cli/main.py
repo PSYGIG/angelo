@@ -17,6 +17,14 @@ import os
 import errno
 from distutils.spawn import find_executable
 from inspect import getdoc
+import random
+import ssl
+import websockets
+import asyncio
+import os
+import sys
+import json
+import argparse
 
 from . import errors
 from . import signals
@@ -35,6 +43,15 @@ from .docopt_command import NoSuchCommand
 from .errors import UserError
 from .formatter import ConsoleWarningFormatter
 from .utils import get_version_info
+from ..webrtc import WebRTCClient
+
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
+gi.require_version('GstWebRTC', '1.0')
+from gi.repository import GstWebRTC
+gi.require_version('GstSdp', '1.0')
+from gi.repository import GstSdp
 
 log = logging.getLogger(__name__)
 console_handler = logging.StreamHandler(sys.stderr)
@@ -186,6 +203,8 @@ class TopLevelCommand(object):
       logs               View output from services
       ps                 List services
       top                Display the running services
+      live               Send live video stream from device to server
+      broadcast          Broadcast video stream from device to all clients connected to server
       version            Show the Angelo version information
     """
 
@@ -490,6 +509,40 @@ class TopLevelCommand(object):
             follow=options['--follow'],
             tail=tail)
 
+    def live(self, options):
+        """
+        Send live video stream from device to server.
+
+        Usage: logs [options] [SERVICE...]
+
+        Options:
+            --no-color          Produce monochrome output.
+            -f, --follow        Follow log output.
+            --tail="all"        Number of lines to show from the end of the logs
+                                for each container.
+        """
+        Gst.init(None)
+        if not check_plugins():
+            sys.exit(1)
+        parser = argparse.ArgumentParser()
+        parser.add_argument('peerid', help='String ID of the peer to connect to')
+        parser.add_argument('--server', help='Signalling server to connect to, eg "wss://127.0.0.1:8443"')
+
+        args = parser.parse_args()
+
+        our_id = random.randrange(10, 10000)
+        server = "wss://staging.psygig.com:8443"
+        server = "ws://localhost:8443"
+        #server = None
+        peerid = 1234
+
+        c = WebRTCClient(our_id, peerid, server)
+        asyncio.get_event_loop().run_until_complete(c.connect())
+        res = asyncio.get_event_loop().run_until_complete(c.loop())
+
+    def broadcast(self, options):
+        pass
+
     @classmethod
     def version(cls, options):
         """
@@ -504,6 +557,15 @@ class TopLevelCommand(object):
             print(__version__)
         else:
             print(get_version_info('full'))
+
+def check_plugins():
+    needed = ["opus", "vpx", "nice", "webrtc", "dtls", "srtp", "rtp",
+              "rtpmanager", "videotestsrc", "audiotestsrc"]
+    missing = list(filter(lambda p: Gst.Registry.get().find_plugin(p) is None, needed))
+    if len(missing):
+        print('Missing gstreamer plugins:', missing)
+        return False
+    return True
 
 def exitval_from_opts(options, project):
     exit_value_from = options.get('--exit-code-from')

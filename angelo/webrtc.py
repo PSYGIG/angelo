@@ -24,19 +24,23 @@ webrtcbin name=sendrecv bundle-policy=max-bundle
 '''
 
 class WebRTCClient:
-    def __init__(self, id_, peer_id=1234, server=None):
+    def __init__(self, id_, peer_id, server):
         self.id_ = id_
         self.conn = None
         self.pipe = None
         self.webrtc = None
         self.peer_id = peer_id
-        self.server = server or 'ws://localhost:8443' # 'wss://staging.psygig.com:8443'
+        self.server = server or 'wss://staging.psygig.com:8443'
 
     async def connect(self):
         sslctx = ssl.create_default_context(purpose=ssl.Purpose.CLIENT_AUTH)
-        #self.conn = await websockets.connect(self.server, ssl=sslctx)
-        self.conn = await websockets.connect(self.server)
-        await self.conn.send('HELLO')
+
+        if self.server.startswith( 'wss' ):
+            self.conn = await websockets.connect(self.server, ssl=sslctx)
+        else:
+            self.conn = await websockets.connect(self.server)
+
+        await self.conn.send('HELLO %d' % self.id_)
 
     async def setup_call(self):
         await self.conn.send('SESSION {}'.format(self.peer_id))
@@ -103,11 +107,11 @@ class WebRTCClient:
         if pad.direction != Gst.PadDirection.SRC:
             return
 
-        decodebin = Gst.ElementFactory.make('decodebin')
-        decodebin.connect('pad-added', self.on_incoming_decodebin_stream)
-        self.pipe.add(decodebin)
-        decodebin.sync_state_with_parent()
-        self.webrtc.link(decodebin)
+        #decodebin = Gst.ElementFactory.make('decodebin')
+        #decodebin.connect('pad-added', self.on_incoming_decodebin_stream)
+        #self.pipe.add(decodebin)
+        #decodebin.sync_state_with_parent()
+        #self.webrtc.link(decodebin)
 
     def start_pipeline(self):
         self.pipe = Gst.parse_launch(PIPELINE_DESC)
@@ -174,4 +178,4 @@ if __name__=='__main__':
     c = WebRTCClient(our_id, args.peerid, args.server)
     asyncio.get_event_loop().run_until_complete(c.connect())
     res = asyncio.get_event_loop().run_until_complete(c.loop())
-sys.exit(res)
+    sys.exit(res)

@@ -6,6 +6,7 @@ import os
 import sys
 import json
 import argparse
+import subprocess
 
 import gi
 gi.require_version('Gst', '1.0')
@@ -22,6 +23,15 @@ webrtcbin name=sendrecv bundle-policy=max-bundle
  audiotestsrc is-live=true wave=red-noise ! audioconvert ! audioresample ! queue ! opusenc ! rtpopuspay !
  queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload=96 ! sendrecv.
 '''
+
+JETSON_PIPELINE_DESC = '''
+webrtcbin name=sendrecv bundle-policy=max-bundle
+ nvarguscamerasrc ! video/x-raw(memory:NVMM), width=(int)1920, height=(int)1080, format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv ! video/x-raw, width=640, height=480, format=NV12, framerate=30/1 ! videoconvert ! queue ! vp8enc deadline=1 ! rtpvp8pay !
+ queue ! application/x-rtp,media=video,encoding-name=VP8,payload=97 ! sendrecv.
+ audiotestsrc is-live=true wave=red-noise ! audioconvert ! audioresample ! queue ! opusenc ! rtpopuspay !
+ queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload=96 ! sendrecv.
+'''
+
 
 class WebRTCClient:
     def __init__(self, id_, peer_id, server):
@@ -114,7 +124,17 @@ class WebRTCClient:
         #self.webrtc.link(decodebin)
 
     def start_pipeline(self):
-        self.pipe = Gst.parse_launch(PIPELINE_DESC)
+        # Check for jetson nano
+        cmd = "cat /proc/device-tree/model"
+        try:
+            result = subprocess.check_output(cmd, shell=True)
+            if result == 'jetson-nano':
+                self.pipe = Gst.parse_launch(JETSON_PIPELINE_DESC)
+            else:
+                self.pipe = Gst.parse_launch(PIPELINE_DESC)
+        except subprocess.CalledProcessError:
+            self.pipe = Gst.parse_launch(PIPELINE_DESC)
+
         self.webrtc = self.pipe.get_by_name('sendrecv')
         self.webrtc.connect('on-negotiation-needed', self.on_negotiation_needed)
         self.webrtc.connect('on-ice-candidate', self.send_ice_candidate_message)

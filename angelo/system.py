@@ -156,10 +156,12 @@ class System(object):
 
         if registration_response.status_code == 201:
             config = configparser.ConfigParser()
-            config['app.psygig.com'] = {'AppSecret': secret,
+            config['app.psygig.com'] = {
+                                        'AppSecret': secret,
                                         'AppId': id,
                                         'BrokerSecret': registration_response_data['broker_app_secret'],
                                         'BrokerId': registration_response_data['broker_app_id'],
+                                        'BrokerTcpUrl': registration_response_data['broker_tcp_url'],
                                         'ChannelId': registration_response_data['channel_id'],
                                         'Identifier': identifier,
                                         'GroupID': group_id}

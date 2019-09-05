@@ -140,13 +140,13 @@ class MqttClient(daemon):
         identifier = conf['identifier']
         broker_app_id = conf['brokerid']
         broker_app_secret = conf['brokersecret']
+        broker_host, broker_port = conf['brokertcpurl'].split(":")
         payload = self.create_config_payload(identifier=identifier, app_id=app_id, app_secret=app_secret)
         killer = GracefulKiller()
         client = mqtt.Client(identifier)
         client.username_pw_set(broker_app_id, broker_app_secret)
         client.on_message = self.on_message
-        # TODO: Change host to staging/production?
-        client.connect("localhost", port=1883)
+        client.connect(broker_host, port=int(broker_port))
         client.loop_start()
         client.subscribe(channel)
         client.publish(channel, payload=payload)

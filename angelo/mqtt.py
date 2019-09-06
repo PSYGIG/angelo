@@ -4,6 +4,7 @@ import sys, os, time, signal, base64, json, configparser, socket
 import paho.mqtt.client as mqtt
 import errno
 import logging
+import schedule
 
 class daemon:
     """A generic daemon class.
@@ -131,30 +132,39 @@ class MqttClient(daemon):
         super().__init__(pidfile, conf)
 
     def run(self):
-        conf = self.read_conf()
+        conf_settings = self.read_conf()
+        self.default_payload = {'identifier': conf_settings['identifier'],
+                                'app_id': conf_settings['appid'],
+                                'app_secret': conf_settings['appsecret'],
+                                'source': socket.gethostbyname(socket.gethostname()),
+                                'group_id': conf_settings['groupid']}
         logging.debug("Starting MQTT Client...")
-        channel_id = conf['channelid']
-        channel = "{}/config".format(channel_id)
-        app_id = conf['appid']
-        app_secret = conf['appsecret']
-        identifier = conf['identifier']
-        broker_app_id = conf['brokerid']
-        broker_app_secret = conf['brokersecret']
-        broker_host, broker_port = conf['brokertcpurl'].split(":")
-        payload = self.create_config_payload(identifier=identifier, app_id=app_id, app_secret=app_secret)
+        config_channel = "{}/config".format(conf_settings['channelid'])
+        presence_channel = "{}/presence".format(conf_settings['channelid'])
+        config_payload = self.default_payload.copy()
+        config_payload['context'] = self.get_encoded_config()
         killer = GracefulKiller()
-        client = mqtt.Client(identifier)
-        client.username_pw_set(broker_app_id, broker_app_secret)
+        broker_host, broker_port = conf_settings['brokertcpurl'].split(':')
+        client = mqtt.Client(self.default_payload['identifier'])
+        client.username_pw_set(conf_settings['brokerid'], conf_settings['brokersecret'])
         client.on_message = self.on_message
         client.connect(broker_host, port=int(broker_port))
         client.loop_start()
-        client.subscribe(channel)
-        client.publish(channel, payload=payload)
+        client.subscribe(config_channel)
+        self.health_check(client, presence_channel)
+        client.publish(config_channel, payload=json.dumps(config_payload))
+        schedule.every(5).seconds.do(self.health_check, client=client, channel=presence_channel)
         while not killer.kill_now:
+            schedule.run_pending()
+            time.sleep(1)
             pass
+        schedule.clear()
         client.loop_stop()
         client.disconnect()
         self.stop()
+
+    def health_check(self, client, channel):
+        client.publish(channel, payload=json.dumps(self.default_payload))
 
     def read_conf(self):
         config = configparser.ConfigParser()
@@ -185,15 +195,12 @@ class MqttClient(daemon):
             if context['source'] != socket.gethostbyname(socket.gethostname()):
                 self.update_config_file(response_payload)
 
-    def create_config_payload(self, identifier, app_id, app_secret):
+    def get_encoded_config(self):
         with open('angelo.yml', 'r') as f:
             config = f.read()
             # decode bytes to string after encoding to b64
             encoded_config = base64.b64encode(config.encode('utf-8')).decode('utf-8')
-            source = socket.gethostbyname(socket.gethostname())
-            payload = {'context': encoded_config, 'identifier': identifier, 'app_id': app_id, 'app_secret': app_secret, 'source': source}
-            string_payload = json.dumps(payload)
-            return string_payload
+            return encoded_config
 
     def update_config_file(self, context):
         data = json.loads(context)['context']

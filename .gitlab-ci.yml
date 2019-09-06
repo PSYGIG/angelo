@@ -4,6 +4,8 @@ variables:
   DATABASE_URL: postgresql://postgres:postgres@postgres:5432/medium_py_test
 
 before_script:
+  - apt-get update
+  - apt-get install -y libgirepository1.0-dev
   - pip install -r requirements.txt
   - pip install -r requirements-build.txt
 

@@ -131,40 +131,48 @@ class MqttClient(daemon):
     def __init__(self, pidfile, conf):
         super().__init__(pidfile, conf)
 
-    def run(self):
+    def initialize_client(self):
         conf_settings = self.read_conf()
         self.default_payload = {'identifier': conf_settings['identifier'],
                                 'app_id': conf_settings['appid'],
                                 'app_secret': conf_settings['appsecret'],
                                 'source': socket.gethostbyname(socket.gethostname()),
                                 'group_id': conf_settings['groupid']}
-        logging.debug("Starting MQTT Client...")
-        config_channel = "{}/config".format(conf_settings['channelid'])
-        presence_channel = "{}/presence".format(conf_settings['channelid'])
-        config_payload = self.default_payload.copy()
-        config_payload['context'] = self.get_encoded_config()
-        killer = GracefulKiller()
+        self.client = mqtt.Client(self.default_payload['identifier'])
+        self.channel_id = conf_settings['channelid']
         broker_host, broker_port = conf_settings['brokertcpurl'].split(':')
-        client = mqtt.Client(self.default_payload['identifier'])
-        client.username_pw_set(conf_settings['brokerid'], conf_settings['brokersecret'])
-        client.on_message = self.on_message
-        client.connect(broker_host, port=int(broker_port))
-        client.loop_start()
-        client.subscribe(config_channel)
-        self.health_check(client, presence_channel)
-        client.publish(config_channel, payload=json.dumps(config_payload))
-        schedule.every(5).seconds.do(self.health_check, client=client, channel=presence_channel)
+        self.client.username_pw_set(conf_settings['brokerid'], conf_settings['brokersecret'])
+        self.client.on_message = self.on_message
+        self.client.connect(broker_host, port=int(broker_port))
+
+    def run(self):
+        logging.debug("Starting MQTT Client...")
+        self.initialize_client()
+        config_channel = '{}/config'.format(self.channel_id)
+        presence_channel = '{}/presence'.format(self.channel_id)
+        config_sync_channel = '{}/sync'.format(self.channel_id)
+        self.client.loop_start()
+        self.client.subscribe([(config_channel, 1), (config_sync_channel, 1)])
+        killer = GracefulKiller()
+        self.health_check(presence_channel)
+        self.sync_config(config_channel)
+        schedule.every(5).seconds.do(self.health_check, channel=presence_channel)
         while not killer.kill_now:
             schedule.run_pending()
             time.sleep(1)
             pass
         schedule.clear()
-        client.loop_stop()
-        client.disconnect()
+        self.client.loop_stop()
+        self.client.disconnect()
         self.stop()
 
-    def health_check(self, client, channel):
-        client.publish(channel, payload=json.dumps(self.default_payload))
+    def health_check(self, channel):
+        self.client.publish(channel, payload=json.dumps(self.default_payload), qos=1)
+
+    def sync_config(self, channel):
+        config_payload = self.default_payload.copy()
+        config_payload['context'] = self.get_encoded_config()
+        self.client.publish(channel, payload=json.dumps(config_payload), qos=1)
 
     def read_conf(self):
         config = configparser.ConfigParser()
@@ -191,9 +199,12 @@ class MqttClient(daemon):
         """
         response_payload = message.payload.decode('utf-8')
         context = json.loads(response_payload)
-        if response_payload:
-            if context['source'] != socket.gethostbyname(socket.gethostname()):
+        if message.topic == "{}/sync".format(self.channel_id):
+            self.sync_config("{}/config".format(self.channel_id))
+        elif message.topic == "{}/config".format(self.channel_id):
+            if response_payload and context['source'] != socket.gethostbyname(socket.gethostname()):
                 self.update_config_file(response_payload)
+                self.sync_config(message.topic)
 
     def get_encoded_config(self):
         with open('angelo.yml', 'r') as f:

@@ -203,6 +203,7 @@ class TopLevelCommand(object):
       ps                 List services
       top                Display the running services
       live               Send live video stream from device to server
+      offline            Stop the live video stream from the device to server
       broadcast          Broadcast video stream from device to all clients connected to server
       version            Show the Angelo version information
     """
@@ -529,7 +530,10 @@ class TopLevelCommand(object):
         """
         Broadcast video stream from device to all clients connected to server
 
-        Usage: broadcast
+        Usage: broadcast [options]
+
+        Options:
+            -s, --server SERVER         Specify an rtmp ingestion endpoint.
 
         """
 
@@ -539,7 +543,7 @@ class TopLevelCommand(object):
         framerate=(fraction)30/1' ! nvvidconv flip-method=0 ! 'video/x-raw, format=(string)BGRx' ! queue ! videoconvert ! queue ! \
         x264enc ! flvmux streamable=true ! queue ! rtmpsink location="
 
-        location = "rtmp://52.185.136.118/LiveApp/242243369345776013882004"
+        location = options['--server'] or "rtmp://52.185.136.118/LiveApp/242243369345776013882004"
 
         if is_jetson_nano():
             cmd = nv_cmd + location

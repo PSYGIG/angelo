@@ -24,6 +24,11 @@ import configparser
 import logging
 import sys
 from signal import SIGTERM
+import random
+import ssl
+import websockets
+import asyncio
+import argparse
 
 from .process import Process
 from .supervisor import Supervisor
@@ -358,6 +363,45 @@ class System(object):
 
         for service in services:
             self.supervisor.logs(service.name, follow, tail)
+            
+    def live(self):
+        from .webrtc import WebRTCClient
+        our_id = random.randrange(10, 10000)
+        server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
+        server = 'ws://localhost:8443'
+        self.mqtt_client.initialize_client()
+        self.mqtt_client.publish_live('webrtc')
+        peerid = self.mqtt_client.channel_id
+
+        c = WebRTCClient(our_id, peerid, server, 'webrtc.pid', self.angelo_conf)
+        c.start()
+        asyncio.get_event_loop().run_until_complete(c.connect())
+        res = asyncio.get_event_loop().run_until_complete(c.loop())
+        sys.exit(res)
+
+    def offline(self):
+        from .webrtc import WebRTCClient
+        self.mqtt_client.initialize_client()
+        our_id = random.randrange(10, 10000)
+        peerid = self.mqtt_client.channel_id
+        server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
+        server = 'ws://localhost:8443'
+        c = WebRTCClient(our_id, peerid, server, 'webrtc.pid', self.angelo_conf)
+
+        if not c.is_running():
+            raise OperationFailedError("Video stream must first be started with \'live\'")
+
+        try:
+            os.kill(c.get_pid(), SIGTERM)
+            self.mqtt_client.publish_live(None)
+            c.stop()
+            logging.debug("Stopping stream...")
+        except ProcessLookupError as e:
+            logging.debug("No webrtc client running. Removing pid file.")
+            os.remove(c.pid_file)
+        except TypeError as e:
+            logging.debug("No webrtc client process id found. Already killed?")
+            logging.error("This service may have already been stopped.")
 
 class NoSuchService(Exception):
     def __init__(self, name):

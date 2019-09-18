@@ -122,6 +122,36 @@ class daemon:
         It will be called after the process has been daemonized by
         start() or restart()."""
 
+    def is_running(self):
+        pid = self.get_pid()
+        if pid is None:
+            return False
+        # The PID file may still exist even if the daemon isn't running,
+        # for example if it has crashed.
+        try:
+            os.kill(pid, 0)
+        except OSError as e:
+            if e.errno == errno.ESRCH:
+                # In this case the PID file shouldn't have existed in
+                # the first place, so we remove it
+                os.remove(self.pidfile)
+                return False
+            # We may also get an exception if we're not allowed to use
+            # kill on the process, but that means that the process does
+            # exist, which is all we care about here.
+        return True
+
+    def get_pid(self):
+        try:
+            with open(self.pidfile, 'r') as f:
+                s = f.read().strip()
+                if not s:
+                    return None
+                return int(s)
+        except IOError as e:
+            if e.errno == errno.ENOENT:
+                return None
+            raise
 
 class MqttClient(daemon):
     """
@@ -146,33 +176,45 @@ class MqttClient(daemon):
         self.client.connect(broker_host, port=int(broker_port))
 
     def run(self):
-        logging.debug("Starting MQTT Client...")
-        self.initialize_client()
-        config_channel = '{}/config'.format(self.channel_id)
-        presence_channel = '{}/presence'.format(self.channel_id)
-        config_sync_channel = '{}/sync'.format(self.channel_id)
-        self.client.loop_start()
-        self.client.subscribe([(config_channel, 1), (config_sync_channel, 1)])
-        killer = GracefulKiller()
-        self.health_check(presence_channel)
-        self.sync_config(config_channel)
-        schedule.every(5).seconds.do(self.health_check, channel=presence_channel)
-        while not killer.kill_now:
-            schedule.run_pending()
-            time.sleep(1)
-            pass
-        schedule.clear()
-        self.client.loop_stop()
-        self.client.disconnect()
-        self.stop()
+        try:
+            logging.debug("Starting MQTT Client...")
+            self.initialize_client()
+            config_channel = '{}/config'.format(self.channel_id)
+            config_sync_channel = '{}/sync'.format(self.channel_id)
+            self.client.loop_start()
+            self.client.subscribe([(config_channel, 1), (config_sync_channel, 1)])
+            killer = GracefulKiller()
+            self.publish_presence('connected')
+            self.sync_config(config_channel)
+            schedule.every(5).seconds.do(self.publish_presence, status='connected')
+            while not killer.kill_now:
+                schedule.run_pending()
+                time.sleep(1)
+                pass
+            schedule.clear()
+            self.publish_presence('disconnected')
+            self.client.loop_stop()
+            self.client.disconnect()
+            self.stop()
+        except Exception as e:
+            print(e)
 
-    def health_check(self, channel):
-        self.client.publish(channel, payload=json.dumps(self.default_payload), qos=1)
+    def publish_presence(self, status):
+        presence_channel = '{}/presence'.format(self.channel_id)
+        presence_payload = self.default_payload.copy()
+        presence_payload['status'] = status
+        self.client.publish(presence_channel, payload=json.dumps(presence_payload), qos=1)
 
     def sync_config(self, channel):
         config_payload = self.default_payload.copy()
         config_payload['context'] = self.get_encoded_config()
         self.client.publish(channel, payload=json.dumps(config_payload), qos=1)
+
+    def publish_live(self, method):
+        live_channel = '{}/live'.format(self.channel_id)
+        live_payload = self.default_payload.copy()
+        live_payload['live'] = method
+        self.client.publish(live_channel, payload=json.dumps(live_payload), qos=2)
 
     def read_conf(self):
         config = configparser.ConfigParser()
@@ -219,36 +261,6 @@ class MqttClient(daemon):
         with open('angelo.yml', 'w+') as f:
             f.write(new_config)
 
-    def is_running(self):
-        pid = self.get_pid()
-        if pid is None:
-            return False
-        # The PID file may still exist even if the daemon isn't running,
-        # for example if it has crashed.
-        try:
-            os.kill(pid, 0)
-        except OSError as e:
-            if e.errno == errno.ESRCH:
-                # In this case the PID file shouldn't have existed in
-                # the first place, so we remove it
-                os.remove(self.pidfile)
-                return False
-            # We may also get an exception if we're not allowed to use
-            # kill on the process, but that means that the process does
-            # exist, which is all we care about here.
-        return True
-
-    def get_pid(self):
-        try:
-            with open(self.pidfile, 'r') as f:
-                s = f.read().strip()
-                if not s:
-                    return None
-                return int(s)
-        except IOError as e:
-            if e.errno == errno.ENOENT:
-                return None
-            raise
 
 
 class GracefulKiller:

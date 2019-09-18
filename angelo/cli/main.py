@@ -43,7 +43,6 @@ from .docopt_command import NoSuchCommand
 from .errors import UserError
 from .formatter import ConsoleWarningFormatter
 from .utils import get_version_info
-from ..webrtc import WebRTCClient
 
 import gi
 gi.require_version('Gst', '1.0')
@@ -516,16 +515,15 @@ class TopLevelCommand(object):
         if not check_plugins():
             sys.exit(1)
 
-        our_id = random.randrange(10, 10000)
-        server = "wss://staging.psygig.com:8443"
-        server = "ws://localhost:8443"
-        #server = None
-        peerid = "60ac436f-f01e-46c6-9677-cde0950e1b5e"
+        self.directory.live()
 
-        c = WebRTCClient(our_id, peerid, server)
-        asyncio.get_event_loop().run_until_complete(c.connect())
-        res = asyncio.get_event_loop().run_until_complete(c.loop())
-        sys.exit(res)
+    def offline(self, options):
+        """
+        Stop the video stream from this device.
+
+        Usage: offline
+        """
+        self.directory.offline()
 
     def broadcast(self, options):
         """

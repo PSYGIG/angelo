@@ -7,6 +7,7 @@ import sys
 import json
 import argparse
 import subprocess
+from .mqtt import daemon
 
 import gi
 gi.require_version('Gst', '1.0')
@@ -33,14 +34,16 @@ webrtcbin name=sendrecv bundle-policy=max-bundle
 '''
 
 
-class WebRTCClient:
-    def __init__(self, id_, peer_id, server):
+class WebRTCClient(daemon):
+    def __init__(self, id_, peer_id, server, pid, conf):
         self.id_ = id_
         self.conn = None
         self.pipe = None
         self.webrtc = None
         self.peer_id = peer_id
-        self.server = server or 'wss://staging.psygig.com:8443'
+        self.server = server or 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
+        self.pidfile = pid
+        self.conf = conf
 
     async def connect(self):
         sslctx = ssl.create_default_context(purpose=ssl.Purpose.CLIENT_AUTH)

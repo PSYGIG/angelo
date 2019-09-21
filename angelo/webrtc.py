@@ -60,7 +60,8 @@ class WebRTCClient(daemon):
 
     def send_sdp_offer(self, offer):
         text = offer.sdp.as_text()
-        print ('Sending offer:\n%s' % text)
+        with open('webrtc.log', 'a+') as log:
+            log.write('Sending offer:\n%s\n' % text)
         msg = json.dumps({'sdp': {'type': 'offer', 'sdp': text}})
         loop = asyncio.new_event_loop()
         loop.run_until_complete(self.conn.send(msg))
@@ -151,7 +152,8 @@ class WebRTCClient(daemon):
             sdp = msg['sdp']
             assert(sdp['type'] == 'answer')
             sdp = sdp['sdp']
-            print ('Received answer:\n%s' % sdp)
+            with open('webrtc.log', 'a+') as log:
+                log.write('Received answer:\n%s\n' % sdp)
             res, sdpmsg = GstSdp.SDPMessage.new()
             GstSdp.sdp_message_parse_buffer(bytes(sdp.encode()), sdpmsg)
             answer = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, sdpmsg)

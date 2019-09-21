@@ -6,6 +6,7 @@
 .coverage*
 .DS_Store
 .idea
+.pid
 
 /.tox
 /binaries
@@ -16,3 +17,7 @@
 /docs/_site
 /README.rst
 /*venv*
+/angelo/*venv*
+supervisord\.log
+
+\.vscode/settings\.json

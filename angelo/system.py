@@ -36,8 +36,8 @@ from .errors import OperationFailedError
 from .mqtt import MqttClient
 
 # TODO: Change to staging/production?
-DEVICE_REGISTRATION_API_ENDPOINT = "http://localhost:4000/api/v1/device"
-GROUP_SEARCH_ENDPOINT = "http://localhost:4000/api/v1/user/namespaces"
+DEVICE_REGISTRATION_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/device"
+GROUP_SEARCH_ENDPOINT = "https://staging.app.psygig.com/api/v1/user/namespaces"
 
 class System(object):
     """
@@ -368,12 +368,15 @@ class System(object):
         from .webrtc import WebRTCClient
         our_id = random.randrange(10, 10000)
         server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
-        server = 'ws://localhost:8443'
+        #server = 'ws://localhost:8443'
         self.mqtt_client.initialize_client()
         self.mqtt_client.publish_live('webrtc')
         peerid = self.mqtt_client.channel_id
 
         c = WebRTCClient(our_id, peerid, server, 'webrtc.pid', self.angelo_conf)
+        if c.is_running():
+            logging.error("Webrtc client already running?")
+            sys.exit(1)
         c.start()
         asyncio.get_event_loop().run_until_complete(c.connect())
         res = asyncio.get_event_loop().run_until_complete(c.loop())

@@ -22,7 +22,13 @@ import json
 import os
 import configparser
 import logging
+import sys
 from signal import SIGTERM
+import random
+import ssl
+import websockets
+import asyncio
+import argparse
 
 from .process import Process
 from .supervisor import Supervisor
@@ -31,6 +37,7 @@ from .mqtt import MqttClient
 
 # TODO: Change to staging/production?
 DEVICE_REGISTRATION_API_ENDPOINT = "http://localhost:4000/api/v1/device"
+GROUP_SEARCH_ENDPOINT = "http://localhost:4000/api/v1/user/namespaces"
 
 class System(object):
     """
@@ -121,26 +128,57 @@ class System(object):
             'app_id': id,
             'app_secret': secret
         }
-        response = requests.post(DEVICE_REGISTRATION_API_ENDPOINT, data=data)
-        data = json.loads(response.text)
 
-        if response.status_code == 201:
+        namespace_response = requests.get(GROUP_SEARCH_ENDPOINT, params=data)
+        namespace_response_data = json.loads(namespace_response.text)
+
+        if namespace_response.status_code == 200:
+            total_namespaces = len(namespace_response_data['namespaces'])
+            if total_namespaces > 1:
+                print('\n#    Group Name')
+                for i, v in enumerate(namespace_response_data['namespaces']):
+                    print('{}    {}'.format(i+1, v['name']))
+                try:
+                    group_identifier = input("\nTarget Group #: ")
+                    assert group_identifier != ""
+                    assert int(group_identifier) <= total_namespaces
+                    data['group_id'] = namespace_response_data['namespaces'][int(group_identifier)-1]['id']
+                    group_id = data['group_id']
+                except ValueError as e:
+                    logging.error("Target Group must be a number.")
+                    sys.exit(1)
+                except AssertionError as e:
+                    logging.error("Target Group must not be empty and correspond with a value in the list.")
+                    sys.exit(1)
+            elif total_namespaces == 1:
+                group_id = namespace_response_data['namespaces'][0]['id']
+        elif namespace_response.status_code == 401:
+            logging.error(namespace_response_data['message'])
+            sys.exit(1)
+        
+        registration_response = requests.post(DEVICE_REGISTRATION_API_ENDPOINT, data=data)
+        registration_response_data = json.loads(registration_response.text)
+
+        if registration_response.status_code == 201:
             config = configparser.ConfigParser()
-            config['app.psygig.com'] = {'AppSecret': secret,
+            config['app.psygig.com'] = {
+                                        'AppSecret': secret,
                                         'AppId': id,
-                                        'BrokerSecret': data['broker_app_secret'],
-                                        'BrokerId': data['broker_app_id'],
-                                        'ChannelId': data['channel_id'],
-                                        'Identifier': identifier}
+                                        'BrokerSecret': registration_response_data['broker_app_secret'],
+                                        'BrokerId': registration_response_data['broker_app_id'],
+                                        'BrokerTcpUrl': registration_response_data['broker_tcp_url'],
+                                        'ChannelId': registration_response_data['channel_id'],
+                                        'Identifier': identifier,
+                                        'GroupID': group_id}
             with open(self.angelo_conf, 'w+') as f:
                 config.write(f)
             logging.info("Device registered.")
-        elif response.status_code == 400:
-            logging.error(data['message'])
-        elif response.status_code == 200:
-            logging.error(data['message'])
-        elif response.status_code == 401:
-            logging.error(data['message'])
+        elif registration_response.status_code == 400:
+            logging.error(registration_response_data['message'])
+        elif registration_response.status_code == 200:
+            logging.error(registration_response_data['message'])
+        elif registration_response.status_code == 401:
+            logging.error(registration_response_data['message'])
 
     def up(self,
            service_names=None,
@@ -325,6 +363,45 @@ class System(object):
 
         for service in services:
             self.supervisor.logs(service.name, follow, tail)
+            
+    def live(self):
+        from .webrtc import WebRTCClient
+        our_id = random.randrange(10, 10000)
+        server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
+        server = 'ws://localhost:8443'
+        self.mqtt_client.initialize_client()
+        self.mqtt_client.publish_live('webrtc')
+        peerid = self.mqtt_client.channel_id
+
+        c = WebRTCClient(our_id, peerid, server, 'webrtc.pid', self.angelo_conf)
+        c.start()
+        asyncio.get_event_loop().run_until_complete(c.connect())
+        res = asyncio.get_event_loop().run_until_complete(c.loop())
+        sys.exit(res)
+
+    def offline(self):
+        from .webrtc import WebRTCClient
+        self.mqtt_client.initialize_client()
+        our_id = random.randrange(10, 10000)
+        peerid = self.mqtt_client.channel_id
+        server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
+        server = 'ws://localhost:8443'
+        c = WebRTCClient(our_id, peerid, server, 'webrtc.pid', self.angelo_conf)
+
+        if not c.is_running():
+            raise OperationFailedError("Video stream must first be started with \'live\'")
+
+        try:
+            os.kill(c.get_pid(), SIGTERM)
+            self.mqtt_client.publish_live(None)
+            c.stop()
+            logging.debug("Stopping stream...")
+        except ProcessLookupError as e:
+            logging.debug("No webrtc client running. Removing pid file.")
+            os.remove(c.pid_file)
+        except TypeError as e:
+            logging.debug("No webrtc client process id found. Already killed?")
+            logging.error("This service may have already been stopped.")
 
 class NoSuchService(Exception):
     def __init__(self, name):

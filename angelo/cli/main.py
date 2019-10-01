@@ -17,6 +17,14 @@ import os
 import errno
 from distutils.spawn import find_executable
 from inspect import getdoc
+import random
+import ssl
+import websockets
+import asyncio
+import os
+import sys
+import json
+import argparse
 
 from . import errors
 from . import signals
@@ -35,6 +43,14 @@ from .docopt_command import NoSuchCommand
 from .errors import UserError
 from .formatter import ConsoleWarningFormatter
 from .utils import get_version_info
+
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
+gi.require_version('GstWebRTC', '1.0')
+from gi.repository import GstWebRTC
+gi.require_version('GstSdp', '1.0')
+from gi.repository import GstSdp
 
 log = logging.getLogger(__name__)
 console_handler = logging.StreamHandler(sys.stderr)
@@ -186,6 +202,9 @@ class TopLevelCommand(object):
       logs               View output from services
       ps                 List services
       top                Display the running services
+      live               Send live video stream from device to server
+      offline            Stop the live video stream from the device to server
+      broadcast          Broadcast video stream from device to all clients connected to server
       version            Show the Angelo version information
     """
 
@@ -471,10 +490,6 @@ class TopLevelCommand(object):
         Usage: logs [options] [SERVICE...]
         
         Options:
-            --no-color          Produce monochrome output.
-            -f, --follow        Follow log output.
-            --tail="all"        Number of lines to show from the end of the logs
-                                for each container.
         """        
         tail = options['--tail']
         if tail is not None:
@@ -490,6 +505,54 @@ class TopLevelCommand(object):
             follow=options['--follow'],
             tail=tail)
 
+    def live(self, options):
+        """
+        Send live video stream from device to server.
+
+        Usage: live
+
+        """
+        Gst.init(None)
+        if not check_plugins():
+            sys.exit(1)
+
+        self.directory.live()
+
+    def offline(self, options):
+        """
+        Stop the video stream from this device.
+
+        Usage: offline
+        """
+        self.directory.offline()
+
+    def broadcast(self, options):
+        """
+        Broadcast video stream from device to all clients connected to server
+
+        Usage: broadcast [options]
+
+        Options:
+            -s, --server SERVER         Specify an rtmp ingestion endpoint.
+
+        """
+
+        cmd = "gst-launch-1.0 v4l2src device=/dev/video0 ! queue ! videoconvert ! queue ! x264enc ! flvmux streamable=true ! queue ! rtmpsink location="
+
+        nv_cmd = "gst-launch-1.0 -e nvarguscamerasrc ! 'video/x-raw(memory:NVMM), width=(int)1920, height=(int)1080, format=(string)NV12, \
+        framerate=(fraction)30/1' ! nvvidconv flip-method=0 ! 'video/x-raw, format=(string)BGRx' ! queue ! videoconvert ! queue ! \
+        x264enc ! flvmux streamable=true ! queue ! rtmpsink location="
+
+        location = options['--server'] or "rtmp://52.185.136.118/LiveApp/242243369345776013882004"
+
+        if is_jetson_nano():
+            cmd = nv_cmd + location
+        else:
+            cmd = cmd + location
+
+        print("Broadcast starting now...")
+        subprocess.check_output(cmd, shell=True)
+
     @classmethod
     def version(cls, options):
         """
@@ -504,6 +567,26 @@ class TopLevelCommand(object):
             print(__version__)
         else:
             print(get_version_info('full'))
+
+def is_jetson_nano():
+    answer = False
+    cmd = "cat /proc/device-tree/model"
+    try:
+        result = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+        if result == 'jetson-nano':
+            answer = True
+    except subprocess.CalledProcessError:
+        pass
+    return answer
+
+def check_plugins():
+    needed = ["opus", "vpx", "nice", "webrtc", "dtls", "srtp", "rtp",
+              "rtpmanager", "videotestsrc", "audiotestsrc"]
+    missing = list(filter(lambda p: Gst.Registry.get().find_plugin(p) is None, needed))
+    if len(missing):
+        print('Missing gstreamer plugins:', missing)
+        return False
+    return True
 
 def exitval_from_opts(options, project):
     exit_value_from = options.get('--exit-code-from')

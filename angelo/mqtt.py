@@ -4,6 +4,7 @@ import sys, os, time, signal, base64, json, configparser, socket
 import paho.mqtt.client as mqtt
 import errno
 import logging
+import schedule
 
 class daemon:
     """A generic daemon class.
@@ -121,86 +122,6 @@ class daemon:
         It will be called after the process has been daemonized by
         start() or restart()."""
 
-
-class MqttClient(daemon):
-    """
-    Subclass of daemon to run mqtt loop as a background process
-    """
-
-    def __init__(self, pidfile, conf):
-        super().__init__(pidfile, conf)
-
-    def run(self):
-        conf = self.read_conf()
-        logging.debug("Starting MQTT Client...")
-        channel_id = conf['channelid']
-        channel = "{}/config".format(channel_id)
-        app_id = conf['appid']
-        app_secret = conf['appsecret']
-        identifier = conf['identifier']
-        broker_app_id = conf['brokerid']
-        broker_app_secret = conf['brokersecret']
-        payload = self.create_config_payload(identifier=identifier, app_id=app_id, app_secret=app_secret)
-        killer = GracefulKiller()
-        client = mqtt.Client(identifier)
-        client.username_pw_set(broker_app_id, broker_app_secret)
-        client.on_message = self.on_message
-        # TODO: Change host to staging/production?
-        client.connect("localhost", port=1883)
-        client.loop_start()
-        client.subscribe(channel)
-        client.publish(channel, payload=payload)
-        while not killer.kill_now:
-            pass
-        client.loop_stop()
-        client.disconnect()
-        self.stop()
-
-    def read_conf(self):
-        config = configparser.ConfigParser()
-        config.read(self.conf)
-        if 'app.psygig.com' not in config.sections():
-            logging.error("MQTT Client was not started for the following reasons:")
-            logging.error(" - Could not find the correct configs under 'app.psygig.com' the MQTT client.")
-            logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
-            self.delpid()
-            sys.exit(1)
-        elif config.options('app.psygig.com') == []:
-            logging.error("MQTT Client was not started for the following reasons:")
-            logging.error(" - No configs found inside ~/.angelo/angelo.conf.")
-            logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
-            self.delpid()
-            sys.exit(1)
-        return config['app.psygig.com']
-
-    def on_message(self, client, userdata, message):
-        """
-        Handle publish response from MQTT broker by overwriting
-        the current config file (angelo.yml) if the message source
-        is not from the device.
-        """
-        response_payload = message.payload.decode('utf-8')
-        context = json.loads(response_payload)
-        if response_payload:
-            if context['source'] != socket.gethostbyname(socket.gethostname()):
-                self.update_config_file(response_payload)
-
-    def create_config_payload(self, identifier, app_id, app_secret):
-        with open('angelo.yml', 'r') as f:
-            config = f.read()
-            # decode bytes to string after encoding to b64
-            encoded_config = base64.b64encode(config.encode('utf-8')).decode('utf-8')
-            source = socket.gethostbyname(socket.gethostname())
-            payload = {'context': encoded_config, 'identifier': identifier, 'app_id': app_id, 'app_secret': app_secret, 'source': source}
-            string_payload = json.dumps(payload)
-            return string_payload
-
-    def update_config_file(self, context):
-        data = json.loads(context)['context']
-        new_config = base64.b64decode(data).decode('utf-8')
-        with open('angelo.yml', 'w+') as f:
-            f.write(new_config)
-
     def is_running(self):
         pid = self.get_pid()
         if pid is None:
@@ -231,6 +152,115 @@ class MqttClient(daemon):
             if e.errno == errno.ENOENT:
                 return None
             raise
+
+class MqttClient(daemon):
+    """
+    Subclass of daemon to run mqtt loop as a background process
+    """
+
+    def __init__(self, pidfile, conf):
+        super().__init__(pidfile, conf)
+
+    def initialize_client(self):
+        conf_settings = self.read_conf()
+        self.default_payload = {'identifier': conf_settings['identifier'],
+                                'app_id': conf_settings['appid'],
+                                'app_secret': conf_settings['appsecret'],
+                                'source': socket.gethostbyname(socket.gethostname()),
+                                'group_id': conf_settings['groupid']}
+        self.client = mqtt.Client(self.default_payload['identifier'])
+        self.channel_id = conf_settings['channelid']
+        broker_host, broker_port = conf_settings['brokertcpurl'].split(':')
+        self.client.username_pw_set(conf_settings['brokerid'], conf_settings['brokersecret'])
+        self.client.on_message = self.on_message
+        self.client.connect(broker_host, port=int(broker_port))
+
+    def run(self):
+        try:
+            logging.debug("Starting MQTT Client...")
+            self.initialize_client()
+            config_channel = '{}/config'.format(self.channel_id)
+            config_sync_channel = '{}/sync'.format(self.channel_id)
+            self.client.loop_start()
+            self.client.subscribe([(config_channel, 1), (config_sync_channel, 1)])
+            killer = GracefulKiller()
+            self.publish_presence('connected')
+            self.sync_config(config_channel)
+            schedule.every(5).seconds.do(self.publish_presence, status='connected')
+            while not killer.kill_now:
+                schedule.run_pending()
+                time.sleep(1)
+                pass
+            schedule.clear()
+            self.publish_presence('disconnected')
+            self.client.loop_stop()
+            self.client.disconnect()
+            self.stop()
+        except Exception as e:
+            print(e)
+
+    def publish_presence(self, status):
+        presence_channel = '{}/presence'.format(self.channel_id)
+        presence_payload = self.default_payload.copy()
+        presence_payload['status'] = status
+        self.client.publish(presence_channel, payload=json.dumps(presence_payload), qos=1)
+
+    def sync_config(self, channel):
+        config_payload = self.default_payload.copy()
+        config_payload['context'] = self.get_encoded_config()
+        self.client.publish(channel, payload=json.dumps(config_payload), qos=1)
+
+    def publish_live(self, method):
+        live_channel = '{}/live'.format(self.channel_id)
+        live_payload = self.default_payload.copy()
+        live_payload['live'] = method
+        self.client.publish(live_channel, payload=json.dumps(live_payload), qos=2)
+
+    def read_conf(self):
+        config = configparser.ConfigParser()
+        config.read(self.conf)
+        if 'app.psygig.com' not in config.sections():
+            logging.error("MQTT Client was not started for the following reasons:")
+            logging.error(" - Could not find the correct configs under 'app.psygig.com' the MQTT client.")
+            logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
+            self.delpid()
+            sys.exit(1)
+        elif config.options('app.psygig.com') == []:
+            logging.error("MQTT Client was not started for the following reasons:")
+            logging.error(" - No configs found inside ~/.angelo/angelo.conf.")
+            logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
+            self.delpid()
+            sys.exit(1)
+        return config['app.psygig.com']
+
+    def on_message(self, client, userdata, message):
+        """
+        Handle publish response from MQTT broker by overwriting
+        the current config file (angelo.yml) if the message source
+        is not from the device.
+        """
+        response_payload = message.payload.decode('utf-8')
+        context = json.loads(response_payload)
+        if message.topic == "{}/sync".format(self.channel_id):
+            self.sync_config("{}/config".format(self.channel_id))
+        elif message.topic == "{}/config".format(self.channel_id):
+            if response_payload and context['source'] != socket.gethostbyname(socket.gethostname()):
+                self.update_config_file(response_payload)
+                self.sync_config(message.topic)
+
+    def get_encoded_config(self):
+        with open('angelo.yml', 'r') as f:
+            config = f.read()
+            # decode bytes to string after encoding to b64
+            encoded_config = base64.b64encode(config.encode('utf-8')).decode('utf-8')
+            return encoded_config
+
+    def update_config_file(self, context):
+        data = json.loads(context)['context']
+        new_config = base64.b64decode(data).decode('utf-8')
+        with open('angelo.yml', 'w+') as f:
+            f.write(new_config)
+
 
 
 class GracefulKiller:

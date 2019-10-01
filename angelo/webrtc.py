@@ -19,8 +19,8 @@ from gi.repository import GstSdp
 
 RPI_PIPELINE_DESC = '''
 webrtcbin name=sendrecv bundle-policy=max-bundle
- rpicamsrc bitrate=5000000 do-timestamp=true preview=false ! video/x-h264,width=1024,height=768,framerat$
- rtph264pay config-interval=1 pt=9 ! queue ! application/x-rtp,media=video,encoding-name=H264,payload=97$
+ rpicamsrc bitrate=5000000 do-timestamp=true preview=false ! video/x-h264,width=1024,height=768,framerate=30/1 ! h264parse ! 
+ rtph264pay config-interval=1 pt=9 ! queue ! application/x-rtp,media=video,encoding-name=H264,payload=97 ! sendrecv. 
 '''
 
 PIPELINE_DESC = '''

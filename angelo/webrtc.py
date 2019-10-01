@@ -7,6 +7,7 @@ import sys
 import json
 import argparse
 import subprocess
+import re
 from .mqtt import daemon
 
 import gi
@@ -18,11 +19,9 @@ gi.require_version('GstSdp', '1.0')
 from gi.repository import GstSdp
 
 PIPELINE_DESC = '''
-webrtcbin name=sendrecv bundle-policy=max-bundle
+tee name=t ! queue ! fakesink
  v4l2src device=/dev/video0 ! videoconvert ! queue ! vp8enc deadline=1 ! rtpvp8pay !
- queue ! application/x-rtp,media=video,encoding-name=VP8,payload=97 ! sendrecv.
- audiotestsrc is-live=true wave=red-noise ! audioconvert ! audioresample ! queue ! opusenc ! rtpopuspay !
- queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload=96 ! sendrecv.
+ queue ! application/x-rtp,media=video,encoding-name=VP8,payload=97 ! t.
 '''
 
 JETSON_PIPELINE_DESC = '''
@@ -36,14 +35,13 @@ webrtcbin name=sendrecv bundle-policy=max-bundle
 
 class WebRTCClient(daemon):
     def __init__(self, id_, peer_id, server, pid, conf):
+        super().__init__(pid, conf)
         self.id_ = id_
         self.conn = None
         self.pipe = None
-        self.webrtc = None
+        self.webrtc = dict()
         self.peer_id = peer_id
         self.server = server or 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
-        self.pidfile = pid
-        self.conf = conf
 
     async def connect(self):
         sslctx = ssl.create_default_context(purpose=ssl.Purpose.CLIENT_AUTH)
@@ -53,36 +51,36 @@ class WebRTCClient(daemon):
         else:
             self.conn = await websockets.connect(self.server)
 
-        await self.conn.send('HELLO %d' % self.id_)
+        await self.conn.send('HELLO %s' % self.id_)
 
     async def setup_call(self):
-        await self.conn.send('SESSION {}'.format(self.peer_id))
+        await self.conn.send('ROOM {}'.format(self.peer_id))
 
-    def send_sdp_offer(self, offer):
+    def send_sdp_offer(self, offer, peer_id):
         text = offer.sdp.as_text()
         with open('webrtc.log', 'a+') as log:
             log.write('Sending offer:\n%s\n' % text)
         msg = json.dumps({'sdp': {'type': 'offer', 'sdp': text}})
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(self.conn.send(msg))
+        loop.run_until_complete(self.conn.send('ROOM_PEER_MSG {} {}'.format(peer_id, msg)))
 
-    def on_offer_created(self, promise, _, __):
+    def on_offer_created(self, promise, _, peer_id):
         promise.wait()
         reply = promise.get_reply()
         offer = reply.get_value('offer')
         promise = Gst.Promise.new()
-        self.webrtc.emit('set-local-description', offer, promise)
+        self.webrtc[peer_id].emit('set-local-description', offer, promise)
         promise.interrupt()
-        self.send_sdp_offer(offer)
+        self.send_sdp_offer(offer, peer_id)
 
-    def on_negotiation_needed(self, element):
-        promise = Gst.Promise.new_with_change_func(self.on_offer_created, element, None)
+    def on_negotiation_needed(self, element, peer_id):
+        promise = Gst.Promise.new_with_change_func(self.on_offer_created, element, peer_id)
         element.emit('create-offer', None, promise)
 
-    def send_ice_candidate_message(self, _, mlineindex, candidate):
+    def send_ice_candidate_message(self, _, mlineindex, candidate, peer_id):
         icemsg = json.dumps({'ice': {'candidate': candidate, 'sdpMLineIndex': mlineindex}})
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(self.conn.send(icemsg))
+        loop.run_until_complete(self.conn.send('ROOM_PEER_MSG {} {}'.format(peer_id, icemsg)))
 
     def on_incoming_decodebin_stream(self, _, pad):
         if not pad.has_current_caps():
@@ -138,15 +136,43 @@ class WebRTCClient(daemon):
                 self.pipe = Gst.parse_launch(PIPELINE_DESC)
         except subprocess.CalledProcessError:
             self.pipe = Gst.parse_launch(PIPELINE_DESC)
-
-        self.webrtc = self.pipe.get_by_name('sendrecv')
-        self.webrtc.connect('on-negotiation-needed', self.on_negotiation_needed)
-        self.webrtc.connect('on-ice-candidate', self.send_ice_candidate_message)
-        self.webrtc.connect('pad-added', self.on_incoming_stream)
+        # Start recording but not transmitting
         self.pipe.set_state(Gst.State.PLAYING)
 
-    async def handle_sdp(self, message):
-        assert (self.webrtc)
+    def add_peer_to_pipeline(self, peer_id):
+        # Need separate webrtcbin per peer
+        q = Gst.ElementFactory.make('queue', 'queue-{}'.format(peer_id))
+        webrtc = Gst.ElementFactory.make('webrtcbin', peer_id)
+        self.pipe.add(q)
+        self.pipe.add(webrtc)
+        srcpad = q.get_static_pad('src')
+        sinkpad = webrtc.get_request_pad('sink_%u')
+        ret = srcpad.link(sinkpad)
+        tee = self.pipe.get_by_name('t')
+        srcpad = tee.get_request_pad('src_%u')
+        sinkpad = q.get_static_pad('sink')
+        ret = srcpad.link(sinkpad)
+
+        self.webrtc[peer_id] = self.pipe.get_by_name(peer_id)
+        self.webrtc[peer_id].connect('on-negotiation-needed', self.on_negotiation_needed, peer_id)
+        self.webrtc[peer_id].connect('on-ice-candidate', self.send_ice_candidate_message, peer_id)
+        self.webrtc[peer_id].connect('pad-added', self.on_incoming_stream)
+        ret = q.sync_state_with_parent()
+        ret = webrtc.sync_state_with_parent()
+
+    def remove_peer_from_pipeline(self, peer_id):
+        webrtc = self.pipe.get_by_name(peer_id)
+        self.pipe.remove(webrtc)
+        self.webrtc.pop(peer_id)
+        q = self.pipe.get_by_name('queue-{}'.format(peer_id))
+        sinkpad = q.get_static_pad('sink')
+        srcpad = sinkpad.get_peer()
+        self.pipe.remove(q)
+        tee = self.pipe.get_by_name('t')
+        tee.release_request_pad(srcpad)
+
+    async def handle_peer_msg(self, message, peer_id):
+        assert (self.webrtc[peer_id])
         msg = json.loads(message)
         if 'sdp' in msg:
             sdp = msg['sdp']
@@ -158,26 +184,45 @@ class WebRTCClient(daemon):
             GstSdp.sdp_message_parse_buffer(bytes(sdp.encode()), sdpmsg)
             answer = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, sdpmsg)
             promise = Gst.Promise.new()
-            self.webrtc.emit('set-remote-description', answer, promise)
+            self.webrtc[peer_id].emit('set-remote-description', answer, promise)
             promise.interrupt()
         elif 'ice' in msg:
             ice = msg['ice']
             candidate = ice['candidate']
             sdpmlineindex = ice['sdpMLineIndex']
-            self.webrtc.emit('add-ice-candidate', sdpmlineindex, candidate)
+            self.webrtc[peer_id].emit('add-ice-candidate', sdpmlineindex, candidate)
 
     async def loop(self):
         assert self.conn
         async for message in self.conn:
             if message == 'HELLO':
                 await self.setup_call()
-            elif message == 'SESSION_OK':
+            elif message.startswith('ROOM_OK'):
+                _, *peers = message.split()
                 self.start_pipeline()
+                if len(peers) > 0:
+                    for peer_id in peers:
+                        self.add_peer_to_pipeline(peer_id)
+                        import time
+                        time.sleep(3)
+            elif message.startswith('ROOM_PEER'):
+                if message.startswith('ROOM_PEER_JOINED'):
+                    _, peer_id = message.split(maxsplit=1)
+                    with open('webrtc.log', 'a+') as log:
+                        log.write('Peer {!r} joined the room\n'.format(peer_id))
+                    self.add_peer_to_pipeline(peer_id)
+                    # Peer will send us an offer
+                elif message.startswith('ROOM_PEER_LEFT'):
+                    _, peer_id = message.split(maxsplit=1)
+                    with open('webrtc.log', 'a+') as log:
+                        log.write('Peer {!r} left the room\n'.format(peer_id))
+                    self.remove_peer_from_pipeline(peer_id)
+                elif message.startswith('ROOM_PEER_MSG'):
+                    _, peer_id, msg = message.split(maxsplit=2)
+                    await self.handle_peer_msg(msg, peer_id)
             elif message.startswith('ERROR'):
                 print (message)
                 return 1
-            else:
-                await self.handle_sdp(message)
         return 0
 
 

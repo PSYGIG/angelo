@@ -5,6 +5,29 @@ Featuring:
 - Instant & secured configurations of software processes and parameters
 - Real-time monitoring of device health, including system resource metrics, logs, and events
 
+## Install
+
+Run the install script to install the required dependencies and packages to run angelo.
+```
+sudo apt install libglib2.0-dev libgirepository1.0-dev libcairo2-dev
+sudo install.sh
+```
+
+Additional packages that may be required:
+```
+gir1.2-gstreamer-1.0
+gir1.2-gst-plugins-base-1.0
+gstreamer-tools
+gstreamer1.0-tools
+gstreamer1.0-doc
+gstreamer1.0-x
+libgstreamer1.0-0
+libgstreamer1.0-dev
+libgstreamer1.0-0-dbg
+python-gst-1.0
+python3-gst-1.0
+```
+
 ## Run
 
 ```python

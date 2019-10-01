@@ -17,6 +17,12 @@ from gi.repository import GstWebRTC
 gi.require_version('GstSdp', '1.0')
 from gi.repository import GstSdp
 
+RPI_PIPELINE_DESC = '''
+webrtcbin name=sendrecv bundle-policy=max-bundle
+ rpicamsrc bitrate=5000000 do-timestamp=true preview=false ! video/x-h264,width=1024,height=768,framerate=30/1 ! h264parse ! 
+ rtph264pay config-interval=1 pt=9 ! queue ! application/x-rtp,media=video,encoding-name=H264,payload=97 ! sendrecv. 
+'''
+
 PIPELINE_DESC = '''
 webrtcbin name=sendrecv bundle-policy=max-bundle
  v4l2src device=/dev/video0 ! videoconvert ! queue ! vp8enc deadline=1 ! rtpvp8pay !
@@ -134,6 +140,8 @@ class WebRTCClient(daemon):
             result = subprocess.check_output(cmd, shell=True)
             if result == 'jetson-nano':
                 self.pipe = Gst.parse_launch(JETSON_PIPELINE_DESC)
+            elif result.decode('utf-8').startswith('Raspberry Pi'):
+                self.pipe = Gst.parse_launch(RPI_PIPELINE_DESC)
             else:
                 self.pipe = Gst.parse_launch(PIPELINE_DESC)
         except subprocess.CalledProcessError:

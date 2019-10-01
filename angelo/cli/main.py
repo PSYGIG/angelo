@@ -115,7 +115,7 @@ def perform_command(options, handler, command_options):
         handler(command, command_options)
         return
 
-    system = system_from_options('.', options)
+    system = system_from_options(os.environ.get('ANGELO_PATH'), options)
     command = TopLevelCommand(system, options=options)
 
     handler(command, command_options)
@@ -214,7 +214,7 @@ class TopLevelCommand(object):
 
     @property
     def root_dir(self):
-        return self.toplevel_options.get('--root-directory') or '.'
+        return self.toplevel_options.get('--root-directory') or os.environ.get('ANGELO_PATH') or '.'
 
     @classmethod
     def help(cls, options):
@@ -244,7 +244,7 @@ class TopLevelCommand(object):
         """
 
         additional_options = {'--no-interpolate': options.get('--no-interpolate')}
-        angelo_config = get_config_from_options('.', self.toplevel_options, additional_options)
+        angelo_config = get_config_from_options(os.environ.get('ANGELO_PATH'), self.toplevel_options, additional_options)
         image_digests = None
 
 

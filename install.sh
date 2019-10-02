@@ -1,4 +1,6 @@
 echo "Installing Angelo gstreamer dependencies..."
+sudo apt-get install libglib2.0-dev libgirepository1.0-dev libcairo2-dev python3-venv 
+
 export CURRENT_ANGELO_DIR=${PWD}
 export GST_BINARIES_DIR=/opt/psygig/gstreamer
 echo "  Installing Angelo dependencies to" $CURRENT_ANGELO_DIR
@@ -51,6 +53,13 @@ pip3 install --upgrade pip
 echo "  Install requirements"
 pip3 install -r requirements.txt
 echo 'source' $CURRENT_ANGELO_DIR/venv/bin/activate | sudo tee -a /home/pi/.bashrc
+
+echo "Installng rpicamsrc"
+apt-get install autoconf automake libtool pkg-config libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libraspberrypi-dev -y
+git clone https://github.com/thaytan/gst-rpicamsrc.git
+cd gst-rpicamsrc && ./autogen.sh --prefix=/usr --libdir=/usr/lib/arm-linux-gnueabihf/ && make -j4 && make install
+cp /usr/lib/arm-linux-gnueabihf/gstreamer-1.0/libgstrpicamsrc.la /opt/psygig/gstreamer/lib/gstreamer-1.0/libgstrpicamsrc.la
+cp /usr/lib/arm-linux-gnueabihf/gstreamer-1.0/libgstrpicamsrc.so /opt/psygig/gstreamer/lib/gstreamer-1.0/libgstrpicamsrc.so
 
 echo "Post install cleanup..."
 rm gstreamer-1.0-linux-arm-1.16.0.tar.bz2

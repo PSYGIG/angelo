@@ -17,6 +17,7 @@
 /docs/_site
 /README.rst
 /*venv*
+webrtc\.log
 /angelo/*venv*
 supervisord\.log
 

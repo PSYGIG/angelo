@@ -364,16 +364,21 @@ class System(object):
         for service in services:
             self.supervisor.logs(service.name, follow, tail)
             
-    def live(self):
-        from .webrtc import WebRTCClient
-        our_id = random.randrange(10, 10000)
-        server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
-        #server = 'ws://localhost:8443'
+    def live(self, experimental=False):
+        if experimental:
+            from .webrtc_experimental import WebRTCClient
+            method = 'webrtc-room'
+        else:
+            from .webrtc import WebRTCClient
+            method = 'webrtc'
         self.mqtt_client.initialize_client()
-        self.mqtt_client.publish_live('webrtc')
-        peerid = self.mqtt_client.channel_id
+        self.mqtt_client.publish_live(method)
+        our_id = "{}:{}".format(self.mqtt_client.default_payload['group_id'], self.mqtt_client.default_payload['identifier'])
+        server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
+        # server = 'ws://localhost:8443'
+        room_id = self.mqtt_client.channel_id
 
-        c = WebRTCClient(our_id, peerid, server, 'webrtc.pid', self.angelo_conf)
+        c = WebRTCClient(our_id, room_id, server, 'webrtc.pid', self.angelo_conf)
         if c.is_running():
             logging.error("Webrtc client already running?")
             sys.exit(1)
@@ -383,7 +388,7 @@ class System(object):
         sys.exit(res)
 
     def offline(self):
-        from .webrtc import WebRTCClient
+        from .webrtc_experimental import WebRTCClient
         self.mqtt_client.initialize_client()
         our_id = random.randrange(10, 10000)
         peerid = self.mqtt_client.channel_id
@@ -401,7 +406,7 @@ class System(object):
             logging.debug("Stopping stream...")
         except ProcessLookupError as e:
             logging.debug("No webrtc client running. Removing pid file.")
-            os.remove(c.pid_file)
+            os.remove(c.pidfile)
         except TypeError as e:
             logging.debug("No webrtc client process id found. Already killed?")
             logging.error("This service may have already been stopped.")

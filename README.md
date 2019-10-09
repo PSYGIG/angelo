@@ -42,6 +42,17 @@ bin/angelo
 - **register** - Allows you to register the device on PSYGIG's platform (requires your application credentials)
 - **reload** - Rereads the configuration file and restarts services based on the newly read configuration file
 - **ps**/**top** - View status of services started by angelo
+- **live** - Starts a low latency stream
+- **offline** - Stops streaming (only for **live**)
+- **broadcast** Starts a higher quality, but higher latency stream
+
+## Issues
+- The **live** command's experimental version will most likely fail to start the stream when there are 3 or more peers 
+already connected.
+- The peer that will view the stream on PSYGIG's platform must first be connected before starting the stream when running
+the normal **live** command.
+    - This requires you to run **live** twice. Once to notify the platform this device is ready and a second time to
+    begin the stream.
 
 ## Executable
 

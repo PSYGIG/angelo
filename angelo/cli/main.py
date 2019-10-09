@@ -450,22 +450,6 @@ class TopLevelCommand(object):
         self.directory.top(
             service_names=service_names)
 
-    def restart(self, options):
-        """
-        Restart running services.
-
-        Usage: restart [options] [SERVICE...]
-
-        Options:
-          -t, --timeout TIMEOUT      Specify a shutdown timeout in seconds.
-                                     (default: 10)
-        """
-        service_names = options['SERVICE']
-
-        self.directory.restart(
-            service_names=service_names,
-            timeout=timeout_from_opts(options))
-
     def kill(self, options):
         """
         Force stop services.
@@ -509,14 +493,20 @@ class TopLevelCommand(object):
         """
         Send live video stream from device to server.
 
-        Usage: live
+        Usage: live [options]
 
+        Options:
+            -e, --experimental         Stream immediately to a connection
+                                       without a connected peer.
         """
         Gst.init(None)
         if not check_plugins():
             sys.exit(1)
 
-        self.directory.live()
+        if options['--experimental']:
+            self.directory.live(experimental=True)
+        else:
+            self.directory.live()
 
     def offline(self, options):
         """

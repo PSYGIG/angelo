@@ -216,6 +216,13 @@ class MqttClient(daemon):
         live_payload['live'] = method
         self.client.publish(live_channel, payload=json.dumps(live_payload), qos=2)
 
+    def publish_event(self, data, type):
+        event_channel = '{}/events'.format(self.channel_id)
+        event_payload = self.default_payload.copy()
+        event_payload['event_data'] = data
+        event_payload['type'] = type
+        self.client.publish(event_channel, payload=json.dumps(event_payload))
+
     def read_conf(self):
         config = configparser.ConfigParser()
         config.read(self.conf)

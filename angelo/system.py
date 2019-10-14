@@ -411,6 +411,70 @@ class System(object):
             logging.debug("No webrtc client process id found. Already killed?")
             logging.error("This service may have already been stopped.")
 
+    def install(self, module_path):
+        from shutil import copyfile
+        try:
+            module_folder_path = os.path.expanduser("~") + "/.angelo/modules"
+            abs_module_path = os.path.abspath(module_path)
+            # create a ~/.angelo/modules folder if not have 
+            os.makedirs(module_folder_path, exist_ok=True) # caution: only for python >= 3.2
+            module_file_name = os.path.basename(abs_module_path)
+            module_file_path = "{}/{}".format(module_folder_path, module_file_name)
+            # cp the file inside the module (append mode)
+            copyfile(abs_module_path, module_file_path)
+            # install the dependency if there are dependencies
+            module = self.get_module(module_file_path)
+
+            # preinstall hook
+            preinstall_hook = getattr(module, '__hook_preinstall', None)
+            if (not (preinstall_hook is None)):
+                preinstall_hook()
+
+            import sys
+            import subprocess
+            base_cmd = [sys.executable, '-m', 'pip', 'install']
+            module_requirements = getattr(module, '__requirements', [])
+
+            if (len(module_requirements) > 0):
+                print("Installing module dependencies")
+                subprocess.check_call(base_cmd + module_requirements)
+                print("Module dependencies are installed")
+                
+            # postinstall hook
+            postinstall_hook = getattr(module, '__hook_postinstall', None)
+            if (not (postinstall_hook is None)):
+                postinstall_hook()
+
+            print("Module is installed")
+
+        except OSError:
+            print("Creation of the directory %s failed" % path)
+
+        except Exception as e:
+            print(e)
+
+    def run(self, module_id):
+        # check if module is being registered
+        from .pipeline import run
+        module_folder_path = os.path.expanduser("~") + "/.angelo/modules"
+        module_path = "{}/{}.py".format(module_folder_path, module_id)
+        try:
+            module = self.get_module(module_path)
+            run(module)
+        except Exception as e:
+            print(e) 
+
+    def get_module(self, path):
+        import importlib.util
+        if os.path.exists(path):
+            # dynamically load the module from the registry
+            spec = importlib.util.spec_from_file_location("module.name", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        else:
+            raise Exception("Module is not yet registered")
+
 class NoSuchService(Exception):
     def __init__(self, name):
         if isinstance(name, six.binary_type):

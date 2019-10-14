@@ -206,6 +206,8 @@ class TopLevelCommand(object):
       offline            Stop the live video stream from the device to server
       broadcast          Broadcast video stream from device to all clients connected to server
       version            Show the Angelo version information
+      install            Install module for custom video and data processing
+      run                Run the module already installed with angelo
     """
 
     def __init__(self, directory, options=None):
@@ -542,6 +544,29 @@ class TopLevelCommand(object):
 
         print("Broadcast starting now...")
         subprocess.check_output(cmd, shell=True)
+
+    def install(self, options):
+        """
+        Install pluggable module for custom video and data processing
+
+        Usage: install [MODULE]
+        """    
+        if options['MODULE']:
+            self.directory.install(options['MODULE'])
+        else:
+            print("No module is given")
+
+    def run(self, options):
+        """
+        Run the installed pluggable module
+
+        Usage: run [MODULE_ID]
+        """
+        # TODO: check if the module id is installed
+        if options['MODULE_ID']:
+            self.directory.run(options['MODULE_ID'])
+        else:
+            print("No module is given")
 
     @classmethod
     def version(cls, options):

@@ -22,3 +22,4 @@ webrtc\.log
 supervisord\.log
 
 \.vscode/settings\.json
+data

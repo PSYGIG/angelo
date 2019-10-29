@@ -38,7 +38,7 @@ from .mqtt import MqttClient
 # TODO: Change to staging/production?
 DEVICE_REGISTRATION_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/device"
 GROUP_SEARCH_ENDPOINT = "https://staging.app.psygig.com/api/v1/user/namespaces"
-MARKETPLACE_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/marketplace/publish"
+MARKETPLACE_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/marketplace"
 
 class System(object):
     """
@@ -412,18 +412,28 @@ class System(object):
             logging.debug("No webrtc client process id found. Already killed?")
             logging.error("This service may have already been stopped.")
 
-    def install(self, module_path):
+    def install(self, module_name, remote=False, version=None):
         from shutil import copyfile
         try:
             module_folder_path = os.path.expanduser("~") + "/.angelo/modules"
-            abs_module_path = os.path.abspath(module_path)
-            # create a ~/.angelo/modules folder if not have 
             os.makedirs(module_folder_path, exist_ok=True) # caution: only for python >= 3.2
-            module_file_name = os.path.basename(abs_module_path)
-            module_file_path = "{}/{}".format(module_folder_path, module_file_name)
-            # cp the file inside the module (append mode)
-            copyfile(abs_module_path, module_file_path)
-            # install the dependency if there are dependencies
+            if remote:
+                response = requests.get(MARKETPLACE_API_ENDPOINT, params={'name': module_name, 'version': version})
+                if response.status_code == 404:
+                    logging.error(json.loads(response.text)['error'])
+                    raise FileNotFoundError
+                os.makedirs(module_folder_path + "/{}".format(os.path.dirname(module_name)), exist_ok=True) # caution: only for python >= 3.2
+                module_file_path = module_folder_path + "/{}.py".format(module_name)
+                with open(module_file_path, 'w+') as m:
+                    m.write(response.text)
+            else:
+                abs_module_path = os.path.abspath(module_name)
+                # create a ~/.angelo/modules folder if not have
+                module_file_name = os.path.basename(abs_module_path)
+                module_file_path = "{}/{}".format(module_folder_path, module_file_name)
+                # cp the file inside the module (append mode)
+                copyfile(abs_module_path, module_file_path)
+                # install the dependency if there are dependencies
             module = self.get_module(module_file_path)
 
             # preinstall hook
@@ -446,10 +456,11 @@ class System(object):
             if (not (postinstall_hook is None)):
                 postinstall_hook()
 
-            print("Module is installed")
+            print("Module installed")
 
-        except OSError:
-            print("Creation of the directory %s failed" % path)
+        except OSError as e:
+            print("Creation of the directory %s failed" % module_folder_path)
+            raise e
 
         except Exception as e:
             print(e)

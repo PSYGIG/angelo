@@ -208,6 +208,7 @@ class TopLevelCommand(object):
       version            Show the Angelo version information
       install            Install module for custom video and data processing
       run                Run the module already installed with angelo
+      publish            Publish your module to the PSYGIG platform
     """
 
     def __init__(self, directory, options=None):
@@ -549,10 +550,16 @@ class TopLevelCommand(object):
         """
         Install pluggable module for custom video and data processing
 
-        Usage: install [MODULE]
+        Usage: install [MODULE] [-i]
+
+        Options:
+            -i         Option to install a module from the PSYGIG marketplace
         """    
         if options['MODULE']:
-            self.directory.install(options['MODULE'])
+            if options['-i']:
+                pass
+            else:
+                self.directory.install(options['MODULE'])
         else:
             print("No module is given")
 
@@ -567,6 +574,23 @@ class TopLevelCommand(object):
             self.directory.run(options['MODULE_ID'])
         else:
             print("No module is given")
+
+    def publish(self, options):
+        """
+        Publish your pluggable module
+
+        Usage: publish [options] [MODULE]
+
+        Options:
+            -o          Publish to organization
+        """
+        if options['MODULE']:
+            if options['-o']:
+                self.directory.publish(options['MODULE'], True)
+            else:
+                self.directory.publish(options['MODULE'])
+        else:
+            print("No module given")
 
     @classmethod
     def version(cls, options):

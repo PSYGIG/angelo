@@ -38,6 +38,7 @@ from .mqtt import MqttClient
 # TODO: Change to staging/production?
 DEVICE_REGISTRATION_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/device"
 GROUP_SEARCH_ENDPOINT = "https://staging.app.psygig.com/api/v1/user/namespaces"
+MARKETPLACE_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/marketplace/publish"
 
 class System(object):
     """
@@ -474,6 +475,37 @@ class System(object):
             return module
         else:
             raise Exception("Module is not yet registered")
+
+    def publish(self, module_name, org=False):
+        cwd = os.getcwd()
+        module_path = "{}/{}.py".format(cwd, module_name)
+        self.mqtt_client.initialize_client()
+        if os.path.exists(module_path):
+            with open(module_path, 'rb') as m:
+                module = self.get_module(module_path)
+                try:
+                    version = getattr(module, 'VERSION')
+                except AttributeError:
+                    logging.error("VERSION attribute required in module")
+                    return
+                tags = getattr(module, 'TAGS', 'None')
+                description = getattr(module, 'DESCRIPTION', 'None')
+                data = {'app_id': self.mqtt_client.default_payload['app_id'],
+                        'app_secret': self.mqtt_client.default_payload['app_secret'],
+                        'version': version,
+                        'tags': tags,
+                        'description': description}
+                files = {'module': m}
+                if org:
+                    data['group_id'] = self.mqtt_client.default_payload['group_id']
+                response = requests.post(MARKETPLACE_API_ENDPOINT + "/publish", data=data, files=files)
+                response_data = json.loads(response.text)
+                if response.status_code == 201:
+                    logging.info(response_data)
+                else:
+                    logging.error(response_data['error'])
+        else:
+            print("Could not find module in current directory")
 
 class NoSuchService(Exception):
     def __init__(self, name):

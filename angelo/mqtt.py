@@ -230,13 +230,19 @@ class MqttClient(daemon):
             logging.error("MQTT Client was not started for the following reasons:")
             logging.error(" - Could not find the correct configs under 'app.psygig.com' the MQTT client.")
             logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
-            self.delpid()
+            try:
+                self.delpid()
+            except:
+                pass
             sys.exit(1)
         elif config.options('app.psygig.com') == []:
             logging.error("MQTT Client was not started for the following reasons:")
             logging.error(" - No configs found inside ~/.angelo/angelo.conf.")
             logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
-            self.delpid()
+            try:
+                self.delpid()
+            except:
+                pass
             sys.exit(1)
         return config['app.psygig.com']
 

@@ -25,6 +25,7 @@ import os
 import sys
 import json
 import argparse
+import re
 
 from . import errors
 from . import signals
@@ -548,18 +549,35 @@ class TopLevelCommand(object):
 
     def install(self, options):
         """
-        Install pluggable module for custom video and data processing
+        Install pluggable module for custom video and data processing.
+        Tries a local install, then checks the marketplace.
 
-        Usage: install [MODULE] [-i]
+        Usage: install [options] [MODULE]
 
         Options:
-            -i         Option to install a module from the PSYGIG marketplace
-        """    
+            -i         Install a local module. MODULE must be an absolute path.
+
+        """
         if options['MODULE']:
-            if options['-i']:
-                pass
+            valid_params_with_version = re.match('^([\w/]+)==(\d+\.)(\d+\.)(\d+)$', options['MODULE'])
+            valid_params_without_version = re.match('^~?([\w/\-_.]+)$', options['MODULE'])
+            if valid_params_with_version:
+                params = options['MODULE'].split('==')
+                module_name = params[0]
+                version = params[1]
+            elif valid_params_without_version:
+                module_name = options['MODULE']
+                version = None
             else:
-                self.directory.install(options['MODULE'])
+                print("Invalid formatting, must be like <MODULE_NAME>==<MAJOR.MINOR.PATCH> or <MODULE_NAME>")
+                return
+            try:
+                if options['-i']:
+                    self.directory.install(module_name)
+                else:
+                    self.directory.install(module_name, True, version)
+            except FileNotFoundError:
+                print("Module could not be found locally or remotely")
         else:
             print("No module is given")
 

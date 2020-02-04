@@ -17,3 +17,4 @@ websockets==8.0.2
 gobject==0.1.0
 PyGObject==3.32.2
 imutils==0.5.3
+gps==3.19

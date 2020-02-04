@@ -48,10 +48,6 @@ from .utils import get_version_info
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
-gi.require_version('GstWebRTC', '1.0')
-from gi.repository import GstWebRTC
-gi.require_version('GstSdp', '1.0')
-from gi.repository import GstSdp
 
 log = logging.getLogger(__name__)
 console_handler = logging.StreamHandler(sys.stderr)
@@ -116,7 +112,7 @@ def perform_command(options, handler, command_options):
         handler(command, command_options)
         return
 
-    system = system_from_options(os.environ.get('ANGELO_PATH'), options)
+    system = system_from_options(os.environ.get('ANGELO_PATH') or '.', options)
     command = TopLevelCommand(system, options=options)
 
     handler(command, command_options)
@@ -210,6 +206,7 @@ class TopLevelCommand(object):
       install            Install module for custom video and data processing
       run                Run the module already installed with angelo
       publish            Publish your module to the PSYGIG platform
+      track              Track this device's GPS location on the PSYGIG platform
     """
 
     def __init__(self, directory, options=None):
@@ -609,6 +606,14 @@ class TopLevelCommand(object):
                 self.directory.publish(options['MODULE'])
         else:
             print("No module given")
+
+    def track(self, options):
+        """
+        Track this device's GPS location on the PSYGIG platform.
+        
+        Usage: track
+        """
+        self.directory.track()
 
     @classmethod
     def version(cls, options):

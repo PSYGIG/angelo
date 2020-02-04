@@ -29,6 +29,7 @@ import ssl
 import websockets
 import asyncio
 import argparse
+import time
 
 from .process import Process
 from .supervisor import Supervisor
@@ -518,6 +519,26 @@ class System(object):
         else:
             print("Could not find module in current directory")
 
+    def track(self):
+        # angelo_conf_path = os.path.expanduser("~") + "/.angelo/angelo.conf"
+        # self.mqtt_client = MqttClient("mqtt.pid", angelo_conf_path)
+        # self.mqtt_client.initialize_client()
+
+        import gps
+
+        gpsd = gps.gps(mode=gps.WATCH_ENABLE|gps.WATCH_NEWSTYLE)
+
+        while True:
+            report = gpsd.next()
+            if report['class'] == 'TPV':
+                payload = {
+                    'timestamp' : getattr(report,'time',''),
+                    'latitude' : getattr(report,'lat',0.0),
+                    'longitude' : getattr(report,'lon',0.0)
+                }
+                print(json.dumps(payload))
+                time.sleep(1)
+        
 class NoSuchService(Exception):
     def __init__(self, name):
         if isinstance(name, six.binary_type):

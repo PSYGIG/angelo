@@ -520,12 +520,22 @@ class System(object):
             print("Could not find module in current directory")
 
     def track(self):
-        self.mqtt_client.initialize_client()
+        print("Connecting to PSYGIG platform...", end = '')
+        try:
+            self.mqtt_client.initialize_client()
+        except Exception as e:
+            print('failed' + e)
+            logging.error("Check that you have a proper connection with the PSYGIG platform.")
+            logging.error("You may need to re-register your device.")
+            sys.exit(1)
+
+        print("success")
 
         import gps
 
         gpsd = gps.gps(mode=gps.WATCH_ENABLE|gps.WATCH_NEWSTYLE)
 
+        print("Tracking device GPS location... (Ctrl+C to stop)")
         while True:
             report = gpsd.next()
             if report['class'] == 'TPV':

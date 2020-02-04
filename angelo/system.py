@@ -520,9 +520,7 @@ class System(object):
             print("Could not find module in current directory")
 
     def track(self):
-        # angelo_conf_path = os.path.expanduser("~") + "/.angelo/angelo.conf"
-        # self.mqtt_client = MqttClient("mqtt.pid", angelo_conf_path)
-        # self.mqtt_client.initialize_client()
+        self.mqtt_client.initialize_client()
 
         import gps
 
@@ -536,7 +534,8 @@ class System(object):
                     'latitude' : getattr(report,'lat',0.0),
                     'longitude' : getattr(report,'lon',0.0)
                 }
-                print(json.dumps(payload))
+                logging.debug(json.dumps(payload))
+                self.mqtt_client.publish_metrics(payload)
                 time.sleep(1)
         
 class NoSuchService(Exception):

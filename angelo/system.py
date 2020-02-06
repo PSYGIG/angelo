@@ -30,6 +30,7 @@ import websockets
 import asyncio
 import argparse
 import time
+import datetime
 
 from .process import Process
 from .supervisor import Supervisor
@@ -533,16 +534,26 @@ class System(object):
 
         import gps
 
-        gpsd = gps.gps(mode=gps.WATCH_ENABLE|gps.WATCH_NEWSTYLE)
+        try:
+            gpsd = gps.gps(mode=gps.WATCH_ENABLE|gps.WATCH_NEWSTYLE)
+        except Exception as e:
+            logging.error("Failed to connect to gpsd service daemon: " + str(e))
+            logging.error("Please ensure gpsd daemon is installed and started.")
+            sys.exit(1)
 
         print("Tracking device GPS location... (Ctrl+C to stop)")
         while True:
             report = gpsd.next()
-            if report['class'] == 'TPV':
+            if report['class'] == 'DEVICES':
+                if len(report.devices) == 0:
+                    logging.error("Unable to detect GPS module. Please check that your GPS device is connected")
+                    logging.error("If your GPS module is already connected. Please try restarting the gpsd service daemon.")
+                    sys.exit(1)
+            elif report['class'] == 'TPV':
                 payload = {
-                    'timestamp' : getattr(report,'time',''),
-                    'latitude' : getattr(report,'lat',0.0),
-                    'longitude' : getattr(report,'lon',0.0)
+                    'timestamp' : getattr(report,'time',datetime.datetime.utcnow().isoformat()),
+                    'latitude' : getattr(report,'lat',-1.0),
+                    'longitude' : getattr(report,'lon',-1.0)
                 }
                 logging.debug(json.dumps(payload))
                 self.mqtt_client.publish_metrics(payload)

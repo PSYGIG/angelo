@@ -525,7 +525,8 @@ class System(object):
         try:
             self.mqtt_client.initialize_client()
         except Exception as e:
-            print('failed' + e)
+            print('failed')
+            logging.error("Error: " + str(e))
             logging.error("Check that you have a proper connection with the PSYGIG platform.")
             logging.error("You may need to re-register your device.")
             sys.exit(1)
@@ -552,12 +553,11 @@ class System(object):
             elif report['class'] == 'TPV':
                 payload = {
                     'timestamp' : getattr(report,'time',datetime.datetime.utcnow().isoformat()),
-                    'latitude' : getattr(report,'lat',-1.0),
-                    'longitude' : getattr(report,'lon',-1.0)
+                    'latitude' : getattr(report,'lat', None),
+                    'longitude' : getattr(report,'lon', None)
                 }
                 logging.debug(json.dumps(payload))
                 self.mqtt_client.publish_metrics(payload)
-                time.sleep(1)
         
 class NoSuchService(Exception):
     def __init__(self, name):

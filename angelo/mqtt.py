@@ -175,6 +175,7 @@ class MqttClient(daemon):
             self.client.username_pw_set(conf_settings['brokerid'], conf_settings['brokersecret'])
         self.client.on_message = self.on_message
         self.client.connect(broker_host, port=int(broker_port))
+        self.client.loop_start()
 
     def run(self):
         try:

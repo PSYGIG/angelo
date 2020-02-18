@@ -41,6 +41,7 @@ from .mqtt import MqttClient
 DEVICE_REGISTRATION_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/device"
 GROUP_SEARCH_ENDPOINT = "https://staging.app.psygig.com/api/v1/user/namespaces"
 MARKETPLACE_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/marketplace"
+GPS_TRACKER_ENDPOINT = "https://staging.app.psygig.com/api/v1/points"
 
 class System(object):
     """
@@ -552,12 +553,26 @@ class System(object):
                     sys.exit(1)
             elif report['class'] == 'TPV':
                 payload = {
-                    'timestamp' : getattr(report,'time',datetime.datetime.utcnow().isoformat()),
-                    'latitude' : getattr(report,'lat', None),
-                    'longitude' : getattr(report,'lon', None)
+                    'app_id': self.mqtt_client.default_payload['app_id'],
+                    'app_secret': self.mqtt_client.default_payload['app_secret'],
+                    'payload': {
+                        "object_id": self.mqtt_client.channel_id,
+                        "object_type": "Unit",
+                        "coordinates": [getattr(report,'lon', None), getattr(report,'lat', None), 1.0],
+                        "timestamp": getattr(report,'time',datetime.datetime.utcnow().isoformat())
+                    }
                 }
-                logging.debug(json.dumps(payload))
                 self.mqtt_client.publish_metrics(payload)
+                if payload['payload']['coordinates'][0] != None and payload['payload']['coordinates'][1] != None:
+                  response = requests.post(GPS_TRACKER_ENDPOINT, json=payload)
+                  logging.debug(payload)
+                  response_data = json.loads(response.text)
+                  if response.status_code == 201:
+                    logging.info(response_data)
+                  else:
+                    logging.error(response_data)
+                else:
+                  logging.info("GPS coordinates invalid")
         
 class NoSuchService(Exception):
     def __init__(self, name):

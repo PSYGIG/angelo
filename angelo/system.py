@@ -29,6 +29,8 @@ import ssl
 import websockets
 import asyncio
 import argparse
+import time
+import datetime
 
 from .process import Process
 from .supervisor import Supervisor
@@ -38,6 +40,8 @@ from .mqtt import MqttClient
 # TODO: Change to staging/production?
 DEVICE_REGISTRATION_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/device"
 GROUP_SEARCH_ENDPOINT = "https://staging.app.psygig.com/api/v1/user/namespaces"
+MARKETPLACE_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/marketplace"
+GPS_TRACKER_ENDPOINT = "https://staging.app.psygig.com/api/v1/points"
 
 class System(object):
     """
@@ -364,16 +368,21 @@ class System(object):
         for service in services:
             self.supervisor.logs(service.name, follow, tail)
             
-    def live(self):
-        from .webrtc import WebRTCClient
-        our_id = random.randrange(10, 10000)
-        server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
-        #server = 'ws://localhost:8443'
+    def live(self, experimental=False):
+        if experimental:
+            from .webrtc_experimental import WebRTCClient
+            method = 'webrtc-room'
+        else:
+            from .webrtc import WebRTCClient
+            method = 'webrtc'
         self.mqtt_client.initialize_client()
-        self.mqtt_client.publish_live('webrtc')
-        peerid = self.mqtt_client.channel_id
+        self.mqtt_client.publish_live(method)
+        our_id = "{}:{}".format(self.mqtt_client.default_payload['group_id'], self.mqtt_client.default_payload['identifier'])
+        server = 'wss://webrtc-signal-server-staging.app.psygig.com:443/'
+        # server = 'ws://localhost:8443'
+        room_id = self.mqtt_client.channel_id
 
-        c = WebRTCClient(our_id, peerid, server, 'webrtc.pid', self.angelo_conf)
+        c = WebRTCClient(our_id, room_id, server, 'webrtc.pid', self.angelo_conf)
         if c.is_running():
             logging.error("Webrtc client already running?")
             sys.exit(1)
@@ -383,7 +392,7 @@ class System(object):
         sys.exit(res)
 
     def offline(self):
-        from .webrtc import WebRTCClient
+        from .webrtc_experimental import WebRTCClient
         self.mqtt_client.initialize_client()
         our_id = random.randrange(10, 10000)
         peerid = self.mqtt_client.channel_id
@@ -401,11 +410,170 @@ class System(object):
             logging.debug("Stopping stream...")
         except ProcessLookupError as e:
             logging.debug("No webrtc client running. Removing pid file.")
-            os.remove(c.pid_file)
+            os.remove(c.pidfile)
         except TypeError as e:
             logging.debug("No webrtc client process id found. Already killed?")
             logging.error("This service may have already been stopped.")
 
+    def install(self, module_name, remote=False, version=None):
+        from shutil import copyfile
+        try:
+            module_folder_path = os.path.expanduser("~") + "/.angelo/modules"
+            os.makedirs(module_folder_path, exist_ok=True) # caution: only for python >= 3.2
+            if remote:
+                response = requests.get(MARKETPLACE_API_ENDPOINT, params={'name': module_name, 'version': version})
+                if response.status_code == 404:
+                    logging.error(json.loads(response.text)['error'])
+                    raise FileNotFoundError
+                os.makedirs(module_folder_path + "/{}".format(os.path.dirname(module_name)), exist_ok=True) # caution: only for python >= 3.2
+                module_file_path = module_folder_path + "/{}.py".format(module_name)
+                with open(module_file_path, 'w+') as m:
+                    m.write(response.text)
+            else:
+                abs_module_path = os.path.abspath(module_name)
+                # create a ~/.angelo/modules folder if not have
+                module_file_name = os.path.basename(abs_module_path)
+                module_file_path = "{}/{}".format(module_folder_path, module_file_name)
+                # cp the file inside the module (append mode)
+                copyfile(abs_module_path, module_file_path)
+                # install the dependency if there are dependencies
+            module = self.get_module(module_file_path)
+
+            # preinstall hook
+            preinstall_hook = getattr(module, '__hook_preinstall', None)
+            if (not (preinstall_hook is None)):
+                preinstall_hook()
+
+            import sys
+            import subprocess
+            base_cmd = [sys.executable, '-m', 'pip', 'install']
+            module_requirements = getattr(module, '__requirements', [])
+
+            if (len(module_requirements) > 0):
+                print("Installing module dependencies")
+                subprocess.check_call(base_cmd + module_requirements)
+                print("Module dependencies are installed")
+                
+            # postinstall hook
+            postinstall_hook = getattr(module, '__hook_postinstall', None)
+            if (not (postinstall_hook is None)):
+                postinstall_hook()
+
+            print("Module installed")
+
+        except OSError as e:
+            print("Creation of the directory %s failed" % module_folder_path)
+            raise e
+
+        except Exception as e:
+            print(e)
+
+    def run(self, module_id):
+        # check if module is being registered
+        from .pipeline import run
+        module_folder_path = os.path.expanduser("~") + "/.angelo/modules"
+        module_path = "{}/{}.py".format(module_folder_path, module_id)
+        try:
+            module = self.get_module(module_path)
+            run(module)
+        except Exception as e:
+            print(e) 
+
+    def get_module(self, path):
+        import importlib.util
+        if os.path.exists(path):
+            # dynamically load the module from the registry
+            spec = importlib.util.spec_from_file_location("module.name", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        else:
+            raise Exception("Module is not yet registered")
+
+    def publish(self, module_name, org=False):
+        cwd = os.getcwd()
+        module_path = "{}/{}.py".format(cwd, module_name)
+        self.mqtt_client.initialize_client()
+        if os.path.exists(module_path):
+            with open(module_path, 'rb') as m:
+                module = self.get_module(module_path)
+                try:
+                    version = getattr(module, 'VERSION')
+                except AttributeError:
+                    logging.error("VERSION attribute required in module")
+                    return
+                tags = getattr(module, 'TAGS', 'None')
+                description = getattr(module, 'DESCRIPTION', 'None')
+                data = {'app_id': self.mqtt_client.default_payload['app_id'],
+                        'app_secret': self.mqtt_client.default_payload['app_secret'],
+                        'version': version,
+                        'tags': tags,
+                        'description': description}
+                files = {'module': m}
+                if org:
+                    data['group_id'] = self.mqtt_client.default_payload['group_id']
+                response = requests.post(MARKETPLACE_API_ENDPOINT + "/publish", data=data, files=files)
+                response_data = json.loads(response.text)
+                if response.status_code == 201:
+                    logging.info(response_data)
+                else:
+                    logging.error(response_data['error'])
+        else:
+            print("Could not find module in current directory")
+
+    def track(self):
+        print("Connecting to PSYGIG platform...", end = '')
+        try:
+            self.mqtt_client.initialize_client()
+        except Exception as e:
+            print('failed')
+            logging.error("Error: " + str(e))
+            logging.error("Check that you have a proper connection with the PSYGIG platform.")
+            logging.error("You may need to re-register your device.")
+            sys.exit(1)
+
+        print("success")
+
+        import gps
+
+        try:
+            gpsd = gps.gps(mode=gps.WATCH_ENABLE|gps.WATCH_NEWSTYLE)
+        except Exception as e:
+            logging.error("Failed to connect to gpsd service daemon: " + str(e))
+            logging.error("Please ensure gpsd daemon is installed and started.")
+            sys.exit(1)
+
+        print("Tracking device GPS location... (Ctrl+C to stop)")
+        while True:
+            report = gpsd.next()
+            if report['class'] == 'DEVICES':
+                if len(report.devices) == 0:
+                    logging.error("Unable to detect GPS module. Please check that your GPS device is connected")
+                    logging.error("If your GPS module is already connected. Please try restarting the gpsd service daemon.")
+                    sys.exit(1)
+            elif report['class'] == 'TPV':
+                payload = {
+                    'app_id': self.mqtt_client.default_payload['app_id'],
+                    'app_secret': self.mqtt_client.default_payload['app_secret'],
+                    'payload': {
+                        "object_id": self.mqtt_client.channel_id,
+                        "object_type": "Unit",
+                        "coordinates": [getattr(report,'lon', None), getattr(report,'lat', None), 1.0],
+                        "timestamp": getattr(report,'time',datetime.datetime.utcnow().isoformat())
+                    }
+                }
+                self.mqtt_client.publish_metrics(payload)
+                if payload['payload']['coordinates'][0] != None and payload['payload']['coordinates'][1] != None:
+                  response = requests.post(GPS_TRACKER_ENDPOINT, json=payload)
+                  logging.debug(payload)
+                  response_data = json.loads(response.text)
+                  if response.status_code == 201:
+                    logging.info(response_data)
+                  else:
+                    logging.error(response_data)
+                else:
+                  logging.info("GPS coordinates invalid")
+        
 class NoSuchService(Exception):
     def __init__(self, name):
         if isinstance(name, six.binary_type):

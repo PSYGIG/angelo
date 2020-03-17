@@ -171,9 +171,11 @@ class MqttClient(daemon):
         self.client = mqtt.Client(self.default_payload['identifier'])
         self.channel_id = conf_settings['channelid']
         broker_host, broker_port = conf_settings['brokertcpurl'].split(':')
-        self.client.username_pw_set(conf_settings['brokerid'], conf_settings['brokersecret'])
+        if 'brokerid' in conf_settings and 'brokersecret' in conf_settings:
+            self.client.username_pw_set(conf_settings['brokerid'], conf_settings['brokersecret'])
         self.client.on_message = self.on_message
         self.client.connect(broker_host, port=int(broker_port))
+        self.client.loop_start()
 
     def run(self):
         try:
@@ -216,6 +218,19 @@ class MqttClient(daemon):
         live_payload['live'] = method
         self.client.publish(live_channel, payload=json.dumps(live_payload), qos=2)
 
+    def publish_event(self, data, type):
+        event_channel = '{}/events'.format(self.channel_id)
+        event_payload = self.default_payload.copy()
+        event_payload['event_data'] = data
+        event_payload['type'] = type
+        self.client.publish(event_channel, payload=json.dumps(event_payload))
+
+    def publish_metrics(self, data):
+        metrics_channel = '{}/metrics'.format(self.channel_id)
+        metrics_payload = self.default_payload.copy()
+        metrics_payload['payload'] = data
+        self.client.publish(metrics_channel, payload=json.dumps(metrics_payload))
+
     def read_conf(self):
         config = configparser.ConfigParser()
         config.read(self.conf)
@@ -223,13 +238,19 @@ class MqttClient(daemon):
             logging.error("MQTT Client was not started for the following reasons:")
             logging.error(" - Could not find the correct configs under 'app.psygig.com' the MQTT client.")
             logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
-            self.delpid()
+            try:
+                self.delpid()
+            except:
+                pass
             sys.exit(1)
         elif config.options('app.psygig.com') == []:
             logging.error("MQTT Client was not started for the following reasons:")
             logging.error(" - No configs found inside ~/.angelo/angelo.conf.")
             logging.error("\nCheck that this device is registered and/or ~/.angelo/angelo.conf exists with the correct information.")
-            self.delpid()
+            try:
+                self.delpid()
+            except:
+                pass
             sys.exit(1)
         return config['app.psygig.com']
 

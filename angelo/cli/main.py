@@ -25,6 +25,7 @@ import os
 import sys
 import json
 import argparse
+import re
 
 from . import errors
 from . import signals
@@ -47,10 +48,6 @@ from .utils import get_version_info
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
-gi.require_version('GstWebRTC', '1.0')
-from gi.repository import GstWebRTC
-gi.require_version('GstSdp', '1.0')
-from gi.repository import GstSdp
 
 log = logging.getLogger(__name__)
 console_handler = logging.StreamHandler(sys.stderr)
@@ -115,7 +112,7 @@ def perform_command(options, handler, command_options):
         handler(command, command_options)
         return
 
-    system = system_from_options(os.environ.get('ANGELO_PATH'), options)
+    system = system_from_options(os.environ.get('ANGELO_PATH') or '.', options)
     command = TopLevelCommand(system, options=options)
 
     handler(command, command_options)
@@ -206,6 +203,10 @@ class TopLevelCommand(object):
       offline            Stop the live video stream from the device to server
       broadcast          Broadcast video stream from device to all clients connected to server
       version            Show the Angelo version information
+      install            Install module for custom video and data processing
+      run                Run the module already installed with angelo
+      publish            Publish your module to the PSYGIG platform
+      track              Track this device's GPS location on the PSYGIG platform
     """
 
     def __init__(self, directory, options=None):
@@ -450,22 +451,6 @@ class TopLevelCommand(object):
         self.directory.top(
             service_names=service_names)
 
-    def restart(self, options):
-        """
-        Restart running services.
-
-        Usage: restart [options] [SERVICE...]
-
-        Options:
-          -t, --timeout TIMEOUT      Specify a shutdown timeout in seconds.
-                                     (default: 10)
-        """
-        service_names = options['SERVICE']
-
-        self.directory.restart(
-            service_names=service_names,
-            timeout=timeout_from_opts(options))
-
     def kill(self, options):
         """
         Force stop services.
@@ -509,14 +494,20 @@ class TopLevelCommand(object):
         """
         Send live video stream from device to server.
 
-        Usage: live
+        Usage: live [options]
 
+        Options:
+            -e, --experimental         Stream immediately to a connection
+                                       without a connected peer.
         """
         Gst.init(None)
         if not check_plugins():
             sys.exit(1)
 
-        self.directory.live()
+        if options['--experimental']:
+            self.directory.live(experimental=True)
+        else:
+            self.directory.live()
 
     def offline(self, options):
         """
@@ -552,6 +543,77 @@ class TopLevelCommand(object):
 
         print("Broadcast starting now...")
         subprocess.check_output(cmd, shell=True)
+
+    def install(self, options):
+        """
+        Install pluggable module for custom video and data processing.
+        Tries a local install, then checks the marketplace.
+
+        Usage: install [options] [MODULE]
+
+        Options:
+            -i         Install a local module. MODULE must be an absolute path.
+
+        """
+        if options['MODULE']:
+            valid_params_with_version = re.match('^([\w/]+)==(\d+\.)(\d+\.)(\d+)$', options['MODULE'])
+            valid_params_without_version = re.match('^~?([\w/\-_.]+)$', options['MODULE'])
+            if valid_params_with_version:
+                params = options['MODULE'].split('==')
+                module_name = params[0]
+                version = params[1]
+            elif valid_params_without_version:
+                module_name = options['MODULE']
+                version = None
+            else:
+                print("Invalid formatting, must be like <MODULE_NAME>==<MAJOR.MINOR.PATCH> or <MODULE_NAME>")
+                return
+            try:
+                if options['-i']:
+                    self.directory.install(module_name)
+                else:
+                    self.directory.install(module_name, True, version)
+            except FileNotFoundError:
+                print("Module could not be found locally or remotely")
+        else:
+            print("No module is given")
+
+    def run(self, options):
+        """
+        Run the installed pluggable module
+
+        Usage: run [MODULE_ID]
+        """
+        # TODO: check if the module id is installed
+        if options['MODULE_ID']:
+            self.directory.run(options['MODULE_ID'])
+        else:
+            print("No module is given")
+
+    def publish(self, options):
+        """
+        Publish your pluggable module
+
+        Usage: publish [options] [MODULE]
+
+        Options:
+            -o          Publish to organization
+        """
+        if options['MODULE']:
+            if options['-o']:
+                self.directory.publish(options['MODULE'], True)
+            else:
+                self.directory.publish(options['MODULE'])
+        else:
+            print("No module given")
+
+    def track(self, options):
+        """
+        Track this device's GPS location on the PSYGIG platform.
+        
+        Usage: track
+        """
+        self.directory.track()
 
     @classmethod
     def version(cls, options):

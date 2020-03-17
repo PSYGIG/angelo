@@ -29,6 +29,8 @@ import ssl
 import websockets
 import asyncio
 import argparse
+import time
+import datetime
 
 from .process import Process
 from .supervisor import Supervisor
@@ -39,6 +41,7 @@ from .mqtt import MqttClient
 DEVICE_REGISTRATION_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/device"
 GROUP_SEARCH_ENDPOINT = "https://staging.app.psygig.com/api/v1/user/namespaces"
 MARKETPLACE_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/marketplace"
+GPS_TRACKER_ENDPOINT = "https://staging.app.psygig.com/api/v1/points"
 
 class System(object):
     """
@@ -518,6 +521,59 @@ class System(object):
         else:
             print("Could not find module in current directory")
 
+    def track(self):
+        print("Connecting to PSYGIG platform...", end = '')
+        try:
+            self.mqtt_client.initialize_client()
+        except Exception as e:
+            print('failed')
+            logging.error("Error: " + str(e))
+            logging.error("Check that you have a proper connection with the PSYGIG platform.")
+            logging.error("You may need to re-register your device.")
+            sys.exit(1)
+
+        print("success")
+
+        import gps
+
+        try:
+            gpsd = gps.gps(mode=gps.WATCH_ENABLE|gps.WATCH_NEWSTYLE)
+        except Exception as e:
+            logging.error("Failed to connect to gpsd service daemon: " + str(e))
+            logging.error("Please ensure gpsd daemon is installed and started.")
+            sys.exit(1)
+
+        print("Tracking device GPS location... (Ctrl+C to stop)")
+        while True:
+            report = gpsd.next()
+            if report['class'] == 'DEVICES':
+                if len(report.devices) == 0:
+                    logging.error("Unable to detect GPS module. Please check that your GPS device is connected")
+                    logging.error("If your GPS module is already connected. Please try restarting the gpsd service daemon.")
+                    sys.exit(1)
+            elif report['class'] == 'TPV':
+                payload = {
+                    'app_id': self.mqtt_client.default_payload['app_id'],
+                    'app_secret': self.mqtt_client.default_payload['app_secret'],
+                    'payload': {
+                        "object_id": self.mqtt_client.channel_id,
+                        "object_type": "Unit",
+                        "coordinates": [getattr(report,'lon', None), getattr(report,'lat', None), 1.0],
+                        "timestamp": getattr(report,'time',datetime.datetime.utcnow().isoformat())
+                    }
+                }
+                self.mqtt_client.publish_metrics(payload)
+                if payload['payload']['coordinates'][0] != None and payload['payload']['coordinates'][1] != None:
+                  response = requests.post(GPS_TRACKER_ENDPOINT, json=payload)
+                  logging.debug(payload)
+                  response_data = json.loads(response.text)
+                  if response.status_code == 201:
+                    logging.info(response_data)
+                  else:
+                    logging.error(response_data)
+                else:
+                  logging.info("GPS coordinates invalid")
+        
 class NoSuchService(Exception):
     def __init__(self, name):
         if isinstance(name, six.binary_type):

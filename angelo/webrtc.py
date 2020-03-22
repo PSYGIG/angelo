@@ -138,7 +138,7 @@ class WebRTCClient(daemon):
         cmd = "cat /proc/device-tree/model"
         try:
             result = subprocess.check_output(cmd, shell=True)
-            if result == 'jetson-nano':
+            if result == 'jetson-nano' or result == b'NVIDIA Jetson Nano Developer Kit\x00':
                 self.pipe = Gst.parse_launch(JETSON_PIPELINE_DESC)
             elif result.decode('utf-8').startswith('Raspberry Pi'):
                 self.pipe = Gst.parse_launch(RPI_PIPELINE_DESC)

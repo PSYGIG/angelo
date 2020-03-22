@@ -33,8 +33,8 @@ webrtcbin name=sendrecv bundle-policy=max-bundle
 
 JETSON_PIPELINE_DESC = '''
 webrtcbin name=sendrecv bundle-policy=max-bundle
- v4l2src device=/dev/video0 ! video/x-raw,format=RGB16 ! videoscale ! video/x-raw,width=640,height=480 ! h264parse ! 
- rtph264pay config-interval=1 pt=9 ! queue ! application/x-rtp,media=video,encoding-name=H264,payload=97 ! sendrecv.
+ v4l2src device=/dev/video0 ! video/x-raw,format=RGB16 ! videoscale ! video/x-raw,width=640,height=480 ! videoconvert ! queue ! vp8enc deadline=1 ! rtpvp8pay !
+ queue ! application/x-rtp,media=video,encoding-name=VP8,payload=97 ! sendrecv.
 '''
 
 

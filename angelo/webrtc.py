@@ -33,10 +33,8 @@ webrtcbin name=sendrecv bundle-policy=max-bundle
 
 JETSON_PIPELINE_DESC = '''
 webrtcbin name=sendrecv bundle-policy=max-bundle
- nvarguscamerasrc ! video/x-raw(memory:NVMM), width=(int)1920, height=(int)1080, format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv ! video/x-raw, width=640, height=480, format=NV12, framerate=30/1 ! videoconvert ! queue ! vp8enc deadline=1 ! rtpvp8pay !
+ v4l2src device=/dev/video0 ! video/x-raw,format=RGB16 ! videoscale ! video/x-raw,width=640,height=480 ! videoconvert ! queue ! vp8enc deadline=1 ! rtpvp8pay !
  queue ! application/x-rtp,media=video,encoding-name=VP8,payload=97 ! sendrecv.
- audiotestsrc is-live=true wave=red-noise ! audioconvert ! audioresample ! queue ! opusenc ! rtpopuspay !
- queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload=96 ! sendrecv.
 '''
 
 

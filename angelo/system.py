@@ -42,6 +42,10 @@ DEVICE_REGISTRATION_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/device
 GROUP_SEARCH_ENDPOINT = "https://staging.app.psygig.com/api/v1/user/namespaces"
 MARKETPLACE_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/marketplace"
 GPS_TRACKER_ENDPOINT = "https://staging.app.psygig.com/api/v1/points"
+# DEVICE_REGISTRATION_API_ENDPOINT = "http://localhost:4000/api/v1/device"
+# GROUP_SEARCH_ENDPOINT = "http://localhost:4000/api/v1/user/namespaces"
+# MARKETPLACE_API_ENDPOINT = "http://localhost:4000/api/v1/marketplace"
+# GPS_TRACKER_ENDPOINT = "http://localhost:4000/api/v1/points"
 
 class System(object):
     """
@@ -418,17 +422,33 @@ class System(object):
     def install(self, module_name, remote=False, version=None):
         from shutil import copyfile
         try:
+            # decouple the config parser with mqtt_client later on
+            config = self.mqtt_client.read_conf()
             module_folder_path = os.path.expanduser("~") + "/.angelo/modules"
             os.makedirs(module_folder_path, exist_ok=True) # caution: only for python >= 3.2
             if remote:
-                response = requests.get(MARKETPLACE_API_ENDPOINT, params={'name': module_name, 'version': version})
+
+                params = {
+                    'name': module_name,
+                    'version': version
+                }
+
+                # add private app support
+                if (config.get('appid') != None and config.get('appsecret') != None):
+                    params['app_id'] = config.get('appid')
+                    params['app_secret'] = config.get('appsecret')
+
+                response = requests.get(MARKETPLACE_API_ENDPOINT, params=params)
+
                 if response.status_code == 404:
                     logging.error(json.loads(response.text)['error'])
-                    raise FileNotFoundError
+                    return
+
                 os.makedirs(module_folder_path + "/{}".format(os.path.dirname(module_name)), exist_ok=True) # caution: only for python >= 3.2
                 module_file_path = module_folder_path + "/{}.py".format(module_name)
                 with open(module_file_path, 'w+') as m:
                     m.write(response.text)
+
             else:
                 abs_module_path = os.path.abspath(module_name)
                 # create a ~/.angelo/modules folder if not have
@@ -437,6 +457,7 @@ class System(object):
                 # cp the file inside the module (append mode)
                 copyfile(abs_module_path, module_file_path)
                 # install the dependency if there are dependencies
+
             module = self.get_module(module_file_path)
 
             # preinstall hook
@@ -490,28 +511,41 @@ class System(object):
         else:
             raise Exception("Module is not yet registered")
 
-    def publish(self, module_name, org=False):
+    def publish(self, module_name):
         cwd = os.getcwd()
         module_path = "{}/{}.py".format(cwd, module_name)
-        self.mqtt_client.initialize_client()
+
+        # decouple the config parser with mqtt_client later on
+        config = self.mqtt_client.read_conf()
+
+        if config.get('appid') == None or config.get('appsecret') == None:
+            raise Exception("You need to register this device before you publish a marketplace app.")
+
         if os.path.exists(module_path):
             with open(module_path, 'rb') as m:
                 module = self.get_module(module_path)
                 try:
                     version = getattr(module, 'VERSION')
+                    public = getattr(module, 'PUBLIC', True)
                 except AttributeError:
                     logging.error("VERSION attribute required in module")
                     return
-                tags = getattr(module, 'TAGS', 'None')
-                description = getattr(module, 'DESCRIPTION', 'None')
-                data = {'app_id': self.mqtt_client.default_payload['app_id'],
-                        'app_secret': self.mqtt_client.default_payload['app_secret'],
+                tags = getattr(module, 'TAGS', '')
+                description = getattr(module, 'DESCRIPTION', '')
+
+                data = {'app_id': config.get('appid'),
+                        'app_secret': config.get('appsecret'),
                         'version': version,
                         'tags': tags,
-                        'description': description}
+                        'description': description,
+                        'public': public}
+
                 files = {'module': m}
-                if org:
-                    data['group_id'] = self.mqtt_client.default_payload['group_id']
+
+                # put in group_id for registered device only when it exists in angelo.conf
+                if config.get('groupid') != None:
+                    data['group_id'] = config['groupid']
+
                 response = requests.post(MARKETPLACE_API_ENDPOINT + "/publish", data=data, files=files)
                 response_data = json.loads(response.text)
                 if response.status_code == 201:

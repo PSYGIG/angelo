@@ -10,11 +10,16 @@ def run(module):
     """
 
     import time
-    from imutils.video import VideoStream
+    import cv2
+    from .videostream import VideoStream
     from .event import Event
 
+    cv2.namedWindow("Preview", cv2.WND_PROP_FULLSCREEN)
+    cv2.setWindowProperty("Preview", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
     # by default, it will fetch /dev/video0
-    vs = VideoStream(0).start()
+    # TODO: use config or have to update manually
+    vs = VideoStream(0, useFlirCamera=True).start()
     time.sleep(1.0)  
     # initiate an event tracer instance and inject into the handler
     event = Event()
@@ -23,7 +28,11 @@ def run(module):
       # grab the frame from the threaded video file stream
       frame = vs.read()
       # module frame handler
-      frame_handler(frame, event)
+      frame = frame_handler(frame, event)
+
+      cv2.imshow("Preview", cv2.resize(frame, (1920, 1080)))
+      if cv2.waitKey(10) == 27:
+        break
 
     # stop the streamer
     vs.stop()  

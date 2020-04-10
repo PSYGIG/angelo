@@ -635,7 +635,7 @@ def is_jetson_nano():
     cmd = "cat /proc/device-tree/model"
     try:
         result = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
-        if result == 'jetson-nano':
+        if result == 'jetson-nano' or result == b'NVIDIA Jetson Nano Developer Kit\x00':
             answer = True
     except subprocess.CalledProcessError:
         pass

@@ -38,10 +38,10 @@ from .errors import OperationFailedError
 from .mqtt import MqttClient
 
 # TODO: Change to staging/production?
-DEVICE_REGISTRATION_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/device"
-GROUP_SEARCH_ENDPOINT = "https://staging.app.psygig.com/api/v1/user/namespaces"
-MARKETPLACE_API_ENDPOINT = "https://staging.app.psygig.com/api/v1/marketplace"
-GPS_TRACKER_ENDPOINT = "https://staging.app.psygig.com/api/v1/points"
+DEVICE_REGISTRATION_API_ENDPOINT = "https://tracer.world/api/v1/device"
+GROUP_SEARCH_ENDPOINT = "https://tracer.world/api/v1/user/namespaces"
+MARKETPLACE_API_ENDPOINT = "https://tracer.world/api/v1/marketplace"
+GPS_TRACKER_ENDPOINT = "https://tracer.world/api/v1/points"
 # DEVICE_REGISTRATION_API_ENDPOINT = "http://localhost:4000/api/v1/device"
 # GROUP_SEARCH_ENDPOINT = "http://localhost:4000/api/v1/user/namespaces"
 # MARKETPLACE_API_ENDPOINT = "http://localhost:4000/api/v1/marketplace"

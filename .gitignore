@@ -23,3 +23,4 @@ supervisord\.log
 
 \.vscode/settings\.json
 data
+*.pid

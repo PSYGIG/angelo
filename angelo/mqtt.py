@@ -262,8 +262,15 @@ class MqttClient(daemon):
         """
         response_payload = message.payload.decode('utf-8')
         context = json.loads(response_payload)
+        
+        # receive sync signal from medium backend (require sync from edge device)
+        # no config is being persisted on the medium backend, it syncs on demand
+        # in order to keep data consistency
         if message.topic == "{}/sync".format(self.channel_id):
+            # publish configuration to medium backend through mqtt broker
             self.sync_config("{}/config".format(self.channel_id))
+
+        # receive modification of config from medium backend (edit on medium)
         elif message.topic == "{}/config".format(self.channel_id):
             if response_payload and context['source'] != socket.gethostbyname(socket.gethostname()):
                 self.update_config_file(response_payload)

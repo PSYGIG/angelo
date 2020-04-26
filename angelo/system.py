@@ -188,21 +188,7 @@ class System(object):
         elif registration_response.status_code == 401:
             logging.error(registration_response_data['message'])
 
-    def up(self,
-           service_names=None,
-           start_deps=True,
-           timeout=None,
-           detached=False,
-           remove_orphans=False,
-           ignore_orphans=False,
-           scale_override=None,
-           rescale=True,
-           start=True,
-           always_recreate_deps=False,
-           reset_container_image=False,
-           renew_anonymous_volumes=False,
-           silent=False,
-           ):
+    def up(self, service_names=None, start_deps=True, timeout=None, detached=False):
 
         pid = os.fork()
         if pid == 0:
@@ -210,42 +196,40 @@ class System(object):
                 self.mqtt_client.start()
             return
 
-        if service_names is None or len(service_names) == 0:
-            if not self.supervisor.is_running():
-                self.supervisor.run_supervisor()
+        # if service_names is None or len(service_names) == 0:
+        #     if not self.supervisor.is_running():
+        #         self.supervisor.run_supervisor()
+        #     self.supervisor.start_process()
+        #     return
 
-            self.supervisor.start_process()
-            return
+        # if not self.supervisor.is_running():
+        #     raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
-        if not self.supervisor.is_running():
-            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
+        # services = self.get_services(service_names, include_deps=start_deps) 
+        # for service in services:
+        #     self.supervisor.start_process(service.name)
 
-        services = self.get_services(
-            service_names,
-            include_deps=start_deps)
+    def down(self):
 
-        for service in services:
-            self.supervisor.start_process(service.name)
+        pid = os.fork()
+        if pid == 0:
+            if self.mqtt_client.is_running():
+                self.mqtt_client.stop()
+                return;
+                
 
-    def down(
-            self,
-            service_names=None,
-            remove_orphans=False,
-            timeout=None,
-            ignore_orphans=False):
+        # if not self.supervisor.is_running():
+        #     raise OperationFailedError("Services must first be started with \'up\' or 'start'")
 
-        if not self.supervisor.is_running():
-            raise OperationFailedError("Services must first be started with \'up\' or 'start'")
+        # if service_names is None or len(service_names) == 0:
+        #     self.supervisor.stop_process()
+        #     return
 
-        if service_names is None or len(service_names) == 0:
-            self.supervisor.stop_process()
-            return
+        # services = self.get_services(
+        #     service_names)
 
-        services = self.get_services(
-            service_names)
-
-        for service in services:
-            self.supervisor.stop_process(service.name)
+        # for service in services:
+        #     self.supervisor.stop_process(service.name)
 
     def start(self,
            start_deps=True,

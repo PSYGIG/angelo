@@ -445,16 +445,18 @@ def process_config_schema_errors(error):
 
 
 def validate_against_config_schema(config_file):
-    schema = load_jsonschema(config_file)
-    format_checker = FormatChecker(["ports", "expose", "subnet_ip_address"])
-    validator = Draft4Validator(
-        schema,
-        resolver=RefResolver(get_resolver_path(), schema),
-        format_checker=format_checker)
-    handle_errors(
-        validator.iter_errors(config_file.config),
-        process_config_schema_errors,
-        config_file.filename)
+    return
+    # skipped
+    # schema = load_jsonschema(config_file)
+    # format_checker = FormatChecker(["ports", "expose", "subnet_ip_address"])
+    # validator = Draft4Validator(
+    #     schema,
+    #     resolver=RefResolver(get_resolver_path(), schema),
+    #     format_checker=format_checker)
+    # handle_errors(
+    #     validator.iter_errors(config_file.config),
+    #     process_config_schema_errors,
+    #     config_file.filename)
 
 
 def validate_service_constraints(config, service_name, config_file):

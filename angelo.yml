@@ -1,11 +1,5 @@
-version: '1.0'
-
-services:
-  influxdb:
-    command: redis-server --appendonly yes --requirepass secret
-  app:
-    command: gunicorn --bind 0.0.0.0:8000 medium.index:app.server
-  service:
-    command: gunicorn --bind 0.0.0.0:8000 medium.index:app.server
-  worker:
-    command: gunicorn --bind 0.0.0.0:8000 medium.index:app.server
+---
+  version: "1.0"
+  env: 
+    CAPTURE_FRAME: false
+    CAM_INDEX: 0

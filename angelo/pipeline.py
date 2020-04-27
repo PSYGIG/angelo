@@ -39,8 +39,6 @@ def run(module):
 
   # ---------------- pipeline ---------------------
 
-  print("{} is running ...".format(module.__MODULE_ID))
-
   # start the video pipeline
   frame_handler = getattr(module, '__handle_frame', None)
   if (not (frame_handler is None)):

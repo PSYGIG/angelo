@@ -498,9 +498,16 @@ class System(object):
         # check if module is being registered
         from .pipeline import run
         module_folder_path = os.path.expanduser("~") + "/.angelo/modules"
-        module_path = "{}/{}.py".format(module_folder_path, module_id)
+        app_folder_path = os.path.join(module_folder_path, module_id)
+        app_json = os.path.join(app_folder_path, "app.json")
+        main_file = os.path.join(app_folder_path, "main.py")
+
+        with open(app_json, 'rb') as package_json:
+            parsed_json = json.load(package_json)
+            main_file = os.path.join(app_folder_path, parsed_json['main'])
+
         try:
-            module = self.get_module(module_path)
+            module = self.get_module(main_file)
             run(module)
         except Exception as e:
             print(e) 

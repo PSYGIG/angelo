@@ -3,14 +3,6 @@
 # angelo install sample-module.py # install the module
 # angelo run sample-module        # run the module
 
-# __MODULE_ID for supporting alias in the future
-__MODULE_ID = "my-module"
-
-VERSION = "0.0.1"
-
-# Private module, published as public if not specified
-PUBLIC = False
-
 # dependencies that will be installed through pip
 # format would be the same as the usage of requirements.txt
 __requirements = [

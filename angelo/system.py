@@ -42,15 +42,13 @@ from .errors import OperationFailedError
 from .mqtt import MqttClient
 
 # TODO: Change to staging/production?
-# DEVICE_REGISTRATION_API_ENDPOINT = "https://tracer.world/api/v1/device"
-# GROUP_SEARCH_ENDPOINT = "https://tracer.world/api/v1/user/namespaces"
-# MARKETPLACE_API_ENDPOINT = "https://tracer.world/api/v1/marketplace"
-# GPS_TRACKER_ENDPOINT = "https://tracer.world/api/v1/points"
+BASE_URL = "https://tracer.world"
+# BASE_URL = "http://localhost:4000"
 
-DEVICE_REGISTRATION_API_ENDPOINT = "http://localhost:4000/api/v1/device"
-GROUP_SEARCH_ENDPOINT = "http://localhost:4000/api/v1/user/namespaces"
-MARKETPLACE_API_ENDPOINT = "http://localhost:4000/api/v1/marketplace"
-GPS_TRACKER_ENDPOINT = "http://localhost:4000/api/v1/points"
+DEVICE_REGISTRATION_API_ENDPOINT = "{}/api/v1/device".format(BASE_URL)
+GROUP_SEARCH_ENDPOINT = "{}/api/v1/user/namespaces".format(BASE_URL)
+MARKETPLACE_API_ENDPOINT = "{}/api/v1/marketplace".format(BASE_URL)
+GPS_TRACKER_ENDPOINT = "{}/api/v1/points".format(BASE_URL)
 
 class System(object):
     """
@@ -501,14 +499,14 @@ class System(object):
         app_folder_path = os.path.join(module_folder_path, module_id)
         app_json = os.path.join(app_folder_path, "app.json")
         main_file = os.path.join(app_folder_path, "main.py")
-
+        
         with open(app_json, 'rb') as package_json:
             parsed_json = json.load(package_json)
             main_file = os.path.join(app_folder_path, parsed_json['main'])
 
         try:
             module = self.get_module(main_file)
-            run(module)
+            run(module, BASE_URL)
         except Exception as e:
             print(e) 
 

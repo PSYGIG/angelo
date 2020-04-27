@@ -550,17 +550,15 @@ class TopLevelCommand(object):
 
         """
         if options['MODULE']:
-            valid_params_with_version = re.match('^([\w/]+)==(\d+\.)(\d+\.)(\d+)$', options['MODULE'])
-            valid_params_without_version = re.match('^~?([\w/\-_.]+)$', options['MODULE'])
-            if valid_params_with_version:
-                params = options['MODULE'].split('==')
-                module_name = params[0]
-                version = params[1]
-            elif valid_params_without_version:
-                module_name = options['MODULE']
+            versioned_module = options['MODULE'].split('#')
+            if len(versioned_module) == 2:
+                module_name = versioned_module[0]
+                version = versioned_module[1]
+            elif len(versioned_module) == 1:
+                module_name = versioned_module[0]
                 version = None
             else:
-                print("Invalid formatting, must be like <MODULE_NAME>==<MAJOR.MINOR.PATCH> or <MODULE_NAME>")
+                print("Invalid formatting, must be like <MODULE_NAME>#<MAJOR.MINOR.PATCH> or <MODULE_NAME>")
                 return
             try:
                 if options['-i']:

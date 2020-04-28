@@ -6,14 +6,17 @@ import os, base64, configparser, yaml
 class UserConfig:
 
     def __init__(self):
-        conf_path = 'angelo.yml'
-        self.config = self.__read_conf(conf_path)
+        self.conf_path = 'angelo.yml'
+        self.config = self.__read_conf(self.conf_path)
 
     def __read_conf(self, conf_path):
         with open(conf_path, 'r') as f:
             config = f.read()
             encoded_config = yaml.safe_load(config.encode('utf-8'))
             return encoded_config 
+
+    def reload(self):
+        self.config = self.__read_conf(self.conf_path)
 
 class SystemConfig:
 

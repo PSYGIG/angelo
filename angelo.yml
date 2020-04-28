@@ -3,3 +3,14 @@
   env: 
     CAPTURE_FRAME: false
     CAM_INDEX: 0
+    SHOW_GUI: false
+    VERBOSE: false
+    VIDEO_SRC: null
+    CAMERA_INDEX: 0
+    CALIBRATE: false
+    RGB_SRC: null
+    BOOT_DELAY: 0
+    USE_CONFIG: false
+    RADIOMETRY: false
+    ALERT_TEMP: null
+    CAPTURE_FRAME: false

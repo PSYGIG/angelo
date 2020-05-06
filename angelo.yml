@@ -14,3 +14,4 @@
     RADIOMETRY: false
     ALERT_TEMP: null
     CAPTURE_FRAME: false
+    TRACER_PYCE_KEY: get_it_after_running_build_script

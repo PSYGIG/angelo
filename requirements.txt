@@ -18,3 +18,4 @@ gobject==0.1.0
 PyGObject==3.32.2
 imutils==0.5.3
 gps==3.19
+pathspec==0.8.0

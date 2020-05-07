@@ -303,14 +303,10 @@ class TopLevelCommand(object):
             -d, --detach               Detached mode: Run services in the background,
                                        print new services names. Incompatible with
                                        --abort-on-services-exit.
-            --no-color                 Produce monochrome output.
             --no-deps                  Don't start linked services.
             -t, --timeout TIMEOUT      Use this timeout in seconds for service
                                        shutdown when attached or when services are
                                        already running. (default: 10)
-            --exit-code-from SERVICE   Return the exit code of the selected service
-                                       service. Implies --abort-on-container-exit.
-            --env-file PATH            Specify an alternate environment file
         """
         start_deps = not options['--no-deps']
         exit_value_from = exitval_from_opts(options, self.directory)
@@ -321,14 +317,11 @@ class TopLevelCommand(object):
         if detached and exit_value_from:
             raise UserError("--abort-on-container-exit and -d cannot be combined.")
 
-        environment_file = options.get('--env-file')
-        environment = Environment.from_env_file(self.root_dir, environment_file)
-
         self.directory.up(
-                    service_names=service_names,
-                    start_deps=start_deps,
-                    timeout=timeout,
-                    detached=detached,
+            service_names=service_names,
+            start_deps=start_deps,
+            timeout=timeout,
+            detached=detached,
         )
 
     def down(self, options):
@@ -342,14 +335,15 @@ class TopLevelCommand(object):
                                     (default: 10)
             --env-file PATH         Specify an alternate environment file
         """
-        service_names = options['SERVICE']
-        environment_file = options.get('--env-file')
-        environment = Environment.from_env_file(self.root_dir, environment_file)
+        # service_names = options['SERVICE']
+        # environment_file = options.get('--env-file')
+        # environment = Environment.from_env_file(self.root_dir, environment_file)
 
-        timeout = timeout_from_opts(options)
-        self.directory.down(
-            service_names=service_names,
-            timeout=timeout)
+        # timeout = timeout_from_opts(options)
+        # self.directory.down(
+        #     service_names=service_names,
+        #     timeout=timeout)
+        self.directory.down()
 
     def start(self, options):
         """
@@ -556,17 +550,15 @@ class TopLevelCommand(object):
 
         """
         if options['MODULE']:
-            valid_params_with_version = re.match('^([\w/]+)==(\d+\.)(\d+\.)(\d+)$', options['MODULE'])
-            valid_params_without_version = re.match('^~?([\w/\-_.]+)$', options['MODULE'])
-            if valid_params_with_version:
-                params = options['MODULE'].split('==')
-                module_name = params[0]
-                version = params[1]
-            elif valid_params_without_version:
-                module_name = options['MODULE']
+            versioned_module = options['MODULE'].split('#')
+            if len(versioned_module) == 2:
+                module_name = versioned_module[0]
+                version = versioned_module[1]
+            elif len(versioned_module) == 1:
+                module_name = versioned_module[0]
                 version = None
             else:
-                print("Invalid formatting, must be like <MODULE_NAME>==<MAJOR.MINOR.PATCH> or <MODULE_NAME>")
+                print("Invalid formatting, must be like <MODULE_NAME>#<MAJOR.MINOR.PATCH> or <MODULE_NAME>")
                 return
             try:
                 if options['-i']:

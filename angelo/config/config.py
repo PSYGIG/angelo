@@ -171,6 +171,10 @@ SUPPORTED_FILENAMES = [
 
 DEFAULT_OVERRIDE_FILENAMES = ('angelo.override.yml', 'angelo.override.yaml')
 
+DEFAULT_ANGELO_YML = \
+"""---
+  version: "1.0"
+"""
 
 log = logging.getLogger(__name__)
 
@@ -313,9 +317,26 @@ def validate_config_version(config_files):
                     next_file.filename,
                     next_file.version))
 
+def create_default_config_file(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w+') as f:
+        f.write(DEFAULT_ANGELO_YML)
 
 def get_default_config_files(base_dir):
     (candidates, path) = find_candidates_in_parent_dirs(SUPPORTED_FILENAMES, base_dir)
+
+    # Look for config file in ~/.angelo
+    if not candidates:
+        conf_dir = os.path.expanduser("~") + "/.angelo"
+        conf_file = os.path.join(conf_dir, SUPPORTED_FILENAMES[0])
+        
+        # Create a default config file in ~/.angelo if not exist
+        if not os.path.exists(conf_file):
+            create_default_config_file(conf_file)
+
+        if os.path.exists(conf_file):
+            candidates = [ SUPPORTED_FILENAMES[0] ]
+            path = conf_dir
 
     if not candidates:
         raise AngeloFileNotFound(SUPPORTED_FILENAMES)

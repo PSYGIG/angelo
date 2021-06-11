@@ -13,7 +13,7 @@ PyYAML==5.1.1
 supervisor==4.0.3
 paho-mqtt==1.4.0
 schedule==0.6.0
-websockets==8.0.2
+websockets==9.1
 gobject==0.1.0
 PyGObject==3.32.2
 imutils==0.5.3

@@ -4,7 +4,7 @@ six==1.10.0
 jsonschema==2.6.0
 requests==2.22.0
 cached_property==1.5.1
-setuptools==20.7.0
+setuptools==65.5.1
 colorama==0.4.1
 mock==3.0.5
 PyInstaller==3.4
